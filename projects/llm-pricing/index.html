@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -45,33 +44,33 @@
 </head>
 <body>
   <h1>LLM Data Pull</h1>
- 
+
   <dl>
     <dt>Project Purpose</dt>
     <dd>Pull LLM data into a Supabase table and show status on a webpage.</dd>
- 
+
     <dt>Refresh Cycle</dt>
     <dd>Every Monday at 9am UTC, plus manual pulls</dd>
- 
+
     <dt>Source</dt>
     <dd>LiteLLM</dd>
- 
+
     <dt>Earliest Date</dt>
     <dd id="earliest-date">Loading...</dd>
- 
+
     <dt>Latest Date</dt>
     <dd id="latest-date">Loading...</dd>
- 
+
     <dt>Total Days</dt>
     <dd id="total-days">Loading...</dd>
- 
+
     <dt>Total Period (days)</dt>
     <dd id="total-period">Loading...</dd>
- 
+
     <dt>Number of Rows</dt>
     <dd id="row-count">Loading...</dd>
   </dl>
- 
+
   <h2>Sample Data (20 models, most recent snapshot)</h2>
   <div class="table-wrapper">
     <table id="sample-table">
@@ -79,13 +78,13 @@
       <tbody id="table-body"></tbody>
     </table>
   </div>
- 
+
   <script>
     const SUPABASE_URL = 'https://zqdvrgtahhejxqjtlbmq.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxZHZyZ3RhaGhlanhxanRsYm1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2Mzk4NTgsImV4cCI6MjA5NzIxNTg1OH0.CM4P4BE1UgS4sAiKC_QPKHqtbvD0oFZ5UKKz7ag9xK8';
- 
+
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
- 
+
     function pickRandom(array, n) {
       const copy = [...array];
       const result = [];
@@ -95,22 +94,50 @@
       }
       return result;
     }
- 
+
+    // Supabase enforces a server-side max rows setting (often 1000)
+    // regardless of the range() requested by the client. To reliably
+    // get every row, we page through in batches of 1000 and stop once
+    // a batch comes back smaller than the batch size.
+    async function fetchAllRows(selectColumns, filterColumn, filterValue) {
+      const batchSize = 1000;
+      let allRows = [];
+      let page = 0;
+
+      while (true) {
+        let query = supabaseClient.from('raw_litellm_pricing').select(selectColumns);
+        if (filterColumn) {
+          query = query.eq(filterColumn, filterValue);
+        }
+        query = query.range(page * batchSize, (page + 1) * batchSize - 1);
+
+        const { data, error } = await query;
+        if (error) {
+          throw error;
+        }
+
+        allRows = allRows.concat(data);
+
+        if (data.length < batchSize) {
+          break;
+        }
+        page++;
+      }
+
+      return allRows;
+    }
+
     async function loadStatus() {
-      // Get every distinct snapshot_date by pulling just that column.
-      // We explicitly raise the range past the default 1000 row cap so
-      // we see the true full set of dates, not a truncated slice.
-      const { data: dateRows, error: dateError } = await supabaseClient
-        .from('raw_litellm_pricing')
-        .select('snapshot_date')
-        .range(0, 9999);
- 
-      if (dateError) {
+      // Get every distinct snapshot_date by paging past the server-side row cap.
+      let dateRows;
+      try {
+        dateRows = await fetchAllRows('snapshot_date');
+      } catch (dateError) {
         document.body.insertAdjacentHTML('beforeend', '<p>Failed to load dates: ' + dateError.message + '</p>');
         console.error(dateError);
         return;
       }
- 
+
       const allDates = dateRows.map(r => r.snapshot_date);
       const uniqueDates = [...new Set(allDates)].sort();
       const earliestDate = uniqueDates[0];
@@ -118,35 +145,32 @@
       const totalDays = uniqueDates.length;
       const totalPeriod = Math.round((new Date(latestDate) - new Date(earliestDate)) / (1000 * 60 * 60 * 24));
       const totalRows = allDates.length;
- 
+
       document.getElementById('earliest-date').textContent = earliestDate;
       document.getElementById('latest-date').textContent = latestDate;
       document.getElementById('total-days').textContent = totalDays;
       document.getElementById('total-period').textContent = totalPeriod;
       document.getElementById('row-count').textContent = totalRows;
- 
+
       // Now pull every row for the latest snapshot date, so we can
-      // randomly sample 20 from the full set rather than just the
-      // first 1000 rows returned.
-      const { data: latestRows, error: latestError } = await supabaseClient
-        .from('raw_litellm_pricing')
-        .select('*')
-        .eq('snapshot_date', latestDate)
-        .range(0, 9999);
- 
-      if (latestError) {
+      // randomly sample 20 from the full set rather than just a
+      // partial batch.
+      let latestRows;
+      try {
+        latestRows = await fetchAllRows('*', 'snapshot_date', latestDate);
+      } catch (latestError) {
         document.body.insertAdjacentHTML('beforeend', '<p>Failed to load sample rows: ' + latestError.message + '</p>');
         console.error(latestError);
         return;
       }
- 
+
       const sample = pickRandom(latestRows, 20);
       renderTable(sample);
     }
- 
+
     function renderTable(rows) {
       if (rows.length === 0) return;
- 
+
       const columns = Object.keys(rows[0]);
       const headRow = document.getElementById('table-head');
       columns.forEach(col => {
@@ -154,7 +178,7 @@
         th.textContent = col;
         headRow.appendChild(th);
       });
- 
+
       const tbody = document.getElementById('table-body');
       rows.forEach(row => {
         const tr = document.createElement('tr');
@@ -167,7 +191,7 @@
         tbody.appendChild(tr);
       });
     }
- 
+
     loadStatus();
   </script>
 </body>
