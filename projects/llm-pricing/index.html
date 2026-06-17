@@ -2,36 +2,132 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>LLM Pricing Dashboard - Connection Test</title>
+  <title>LLM Pricing Dashboard - Summary</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <h1>LLM Pricing Dashboard</h1>
-  <p id="status">Connecting to Supabase...</p>
-
+  <p id="status">Loading data...</p>
+  <pre id="summary"></pre>
+ 
   <script>
     const SUPABASE_URL = 'https://zqdvrgtahhejxqjtlbmq.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxZHZyZ3RhaGhlanhxanRsYm1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2Mzk4NTgsImV4cCI6MjA5NzIxNTg1OH0.CM4P4BE1UgS4sAiKC_QPKHqtbvD0oFZ5UKKz7ag9xK8';
-
+ 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    async function testConnection() {
+ 
+    const CAPABILITY_COLUMNS = [
+      'supports_vision',
+      'supports_function_calling',
+      'supports_parallel_function_calling',
+      'supports_tool_choice',
+      'supports_reasoning',
+      'supports_prompt_caching',
+      'supports_response_schema',
+      'supports_system_messages',
+      'supports_audio_input',
+      'supports_audio_output',
+      'supports_web_search'
+    ];
+ 
+    function median(values) {
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      if (sorted.length % 2 === 0) {
+        return (sorted[mid - 1] + sorted[mid]) / 2;
+      }
+      return sorted[mid];
+    }
+ 
+    function formatCost(value) {
+      return '$' + value.toFixed(4);
+    }
+ 
+    async function loadSummary() {
       const statusEl = document.getElementById('status');
-
-      const { count, error } = await supabaseClient
+      const summaryEl = document.getElementById('summary');
+ 
+      // Step 1: find the most recent snapshot_date in the table
+      const { data: latestRows, error: latestError } = await supabaseClient
         .from('litellm_pricing')
-        .select('*', { count: 'exact', head: true });
-
-      if (error) {
-        statusEl.textContent = 'Connection failed: ' + error.message;
-        console.error(error);
+        .select('snapshot_date')
+        .order('snapshot_date', { ascending: false })
+        .limit(1);
+ 
+      if (latestError) {
+        statusEl.textContent = 'Failed to find latest snapshot: ' + latestError.message;
+        console.error(latestError);
         return;
       }
-
-      statusEl.textContent = 'Connected. Row count in litellm_pricing: ' + count;
+ 
+      const latestDate = latestRows[0].snapshot_date;
+ 
+      // Step 2: pull every row for that snapshot date
+      const { data: rows, error: rowsError } = await supabaseClient
+        .from('litellm_pricing')
+        .select('*')
+        .eq('snapshot_date', latestDate);
+ 
+      if (rowsError) {
+        statusEl.textContent = 'Failed to load snapshot data: ' + rowsError.message;
+        console.error(rowsError);
+        return;
+      }
+ 
+      statusEl.textContent = 'Snapshot date: ' + latestDate + ' (' + rows.length + ' rows)';
+ 
+      // Total models and distinct providers
+      const totalModels = rows.length;
+      const providers = new Set(rows.map(r => r.litellm_provider));
+      const totalProviders = providers.size;
+ 
+      // Filter to rows that actually have an input cost, since some rows have nulls
+      const rowsWithInputCost = rows.filter(r => r.input_cost_per_1m !== null && r.input_cost_per_1m !== undefined);
+      const rowsWithOutputCost = rows.filter(r => r.output_cost_per_1m !== null && r.output_cost_per_1m !== undefined);
+ 
+      const inputCosts = rowsWithInputCost.map(r => r.input_cost_per_1m);
+      const outputCosts = rowsWithOutputCost.map(r => r.output_cost_per_1m);
+ 
+      const avgInputCost = inputCosts.reduce((a, b) => a + b, 0) / inputCosts.length;
+      const avgOutputCost = outputCosts.reduce((a, b) => a + b, 0) / outputCosts.length;
+      const medianInputCost = median(inputCosts);
+      const medianOutputCost = median(outputCosts);
+ 
+      const cheapestModel = rowsWithInputCost.reduce((min, r) => r.input_cost_per_1m < min.input_cost_per_1m ? r : min);
+      const mostExpensiveModel = rowsWithInputCost.reduce((max, r) => r.input_cost_per_1m > max.input_cost_per_1m ? r : max);
+ 
+      // Capability counts
+      const capabilityCounts = {};
+      CAPABILITY_COLUMNS.forEach(col => {
+        capabilityCounts[col] = rows.filter(r => r[col] === true).length;
+      });
+ 
+      // Build the text output
+      let output = '';
+      output += 'SNAPSHOT DATE: ' + latestDate + '\n';
+      output += '\n';
+      output += 'Total models tracked: ' + totalModels + '\n';
+      output += 'Distinct providers: ' + totalProviders + '\n';
+      output += '\n';
+      output += 'PRICING (per 1M tokens, models with known pricing only)\n';
+      output += 'Average input cost: ' + formatCost(avgInputCost) + '\n';
+      output += 'Median input cost: ' + formatCost(medianInputCost) + '\n';
+      output += 'Average output cost: ' + formatCost(avgOutputCost) + '\n';
+      output += 'Median output cost: ' + formatCost(medianOutputCost) + '\n';
+      output += '\n';
+      output += 'Cheapest model (by input cost): ' + cheapestModel.model + ' (' + cheapestModel.litellm_provider + ') at ' + formatCost(cheapestModel.input_cost_per_1m) + '\n';
+      output += 'Most expensive model (by input cost): ' + mostExpensiveModel.model + ' (' + mostExpensiveModel.litellm_provider + ') at ' + formatCost(mostExpensiveModel.input_cost_per_1m) + '\n';
+      output += '\n';
+      output += 'CAPABILITY BREAKDOWN (count of models supporting each)\n';
+      CAPABILITY_COLUMNS.forEach(col => {
+        const label = col.replace('supports_', '').replace(/_/g, ' ');
+        output += label + ': ' + capabilityCounts[col] + ' / ' + totalModels + '\n';
+      });
+ 
+      summaryEl.textContent = output;
     }
-
-    testConnection();
+ 
+    loadSummary();
   </script>
 </body>
 </html>
