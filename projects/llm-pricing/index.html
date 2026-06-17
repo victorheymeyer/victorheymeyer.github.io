@@ -44,33 +44,44 @@
 </head>
 <body>
   <h1>LLM Data Pull</h1>
-
+ 
   <dl>
     <dt>Project Purpose</dt>
     <dd>Pull LLM data into a Supabase table and show status on a webpage.</dd>
-
+ 
     <dt>Refresh Cycle</dt>
     <dd>Every Monday at 9am UTC, plus manual pulls</dd>
-
+ 
     <dt>Source</dt>
     <dd>LiteLLM</dd>
-
+ 
     <dt>Earliest Date</dt>
     <dd id="earliest-date">Loading...</dd>
-
+ 
     <dt>Latest Date</dt>
     <dd id="latest-date">Loading...</dd>
-
+ 
     <dt>Total Days</dt>
     <dd id="total-days">Loading...</dd>
-
+ 
     <dt>Total Period (days)</dt>
     <dd id="total-period">Loading...</dd>
-
+ 
     <dt>Number of Rows</dt>
-    <dd id="row-count">Loading...</dd>
+    <dd>
+      Earliest date: <span id="row-count-earliest">Loading...</span><br>
+      Latest date: <span id="row-count-latest">Loading...</span>
+    </dd>
+ 
+    <dt>Number of Providers</dt>
+    <dd>(Developers + Resellers) <span id="provider-count">Loading...</span></dd>
+ 
+    <dt>List of Providers</dt>
+    <dd id="provider-list">Loading...</dd>
   </dl>
-
+ 
+  <p><strong>Note:</strong> each row is considered a "Model," but a row actually represents Model + Location + Vendor, since the same underlying model can appear multiple times across different hosting locations and resellers.</p>
+ 
   <h2>Sample Data (20 models, most recent snapshot)</h2>
   <div class="table-wrapper">
     <table id="sample-table">
@@ -78,13 +89,13 @@
       <tbody id="table-body"></tbody>
     </table>
   </div>
-
+ 
   <script>
     const SUPABASE_URL = 'https://zqdvrgtahhejxqjtlbmq.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxZHZyZ3RhaGhlanhxanRsYm1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2Mzk4NTgsImV4cCI6MjA5NzIxNTg1OH0.CM4P4BE1UgS4sAiKC_QPKHqtbvD0oFZ5UKKz7ag9xK8';
-
+ 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
+ 
     function pickRandom(array, n) {
       const copy = [...array];
       const result = [];
@@ -94,7 +105,7 @@
       }
       return result;
     }
-
+ 
     // Supabase enforces a server-side max rows setting (often 1000)
     // regardless of the range() requested by the client. To reliably
     // get every row, we page through in batches of 1000 and stop once
@@ -103,30 +114,30 @@
       const batchSize = 1000;
       let allRows = [];
       let page = 0;
-
+ 
       while (true) {
         let query = supabaseClient.from('raw_litellm_pricing').select(selectColumns);
         if (filterColumn) {
           query = query.eq(filterColumn, filterValue);
         }
         query = query.range(page * batchSize, (page + 1) * batchSize - 1);
-
+ 
         const { data, error } = await query;
         if (error) {
           throw error;
         }
-
+ 
         allRows = allRows.concat(data);
-
+ 
         if (data.length < batchSize) {
           break;
         }
         page++;
       }
-
+ 
       return allRows;
     }
-
+ 
     async function loadStatus() {
       // Get every distinct snapshot_date by paging past the server-side row cap.
       let dateRows;
@@ -137,21 +148,31 @@
         console.error(dateError);
         return;
       }
-
+ 
       const allDates = dateRows.map(r => r.snapshot_date);
       const uniqueDates = [...new Set(allDates)].sort();
       const earliestDate = uniqueDates[0];
       const latestDate = uniqueDates[uniqueDates.length - 1];
       const totalDays = uniqueDates.length;
       const totalPeriod = Math.round((new Date(latestDate) - new Date(earliestDate)) / (1000 * 60 * 60 * 24));
-      const totalRows = allDates.length;
-
+ 
+      // Row counts are per snapshot date, since different pulls can
+      // capture a different number of models depending on what LiteLLM
+      // had listed at that time.
+      const rowCountByDate = {};
+      allDates.forEach(d => {
+        rowCountByDate[d] = (rowCountByDate[d] || 0) + 1;
+      });
+      const earliestRowCount = rowCountByDate[earliestDate];
+      const latestRowCount = rowCountByDate[latestDate];
+ 
       document.getElementById('earliest-date').textContent = earliestDate;
       document.getElementById('latest-date').textContent = latestDate;
       document.getElementById('total-days').textContent = totalDays;
       document.getElementById('total-period').textContent = totalPeriod;
-      document.getElementById('row-count').textContent = totalRows;
-
+      document.getElementById('row-count-earliest').textContent = earliestRowCount;
+      document.getElementById('row-count-latest').textContent = latestRowCount;
+ 
       // Now pull every row for the latest snapshot date, so we can
       // randomly sample 20 from the full set rather than just a
       // partial batch.
@@ -163,14 +184,19 @@
         console.error(latestError);
         return;
       }
-
+ 
       const sample = pickRandom(latestRows, 20);
       renderTable(sample);
+ 
+      // Provider count and list, based on the most recent snapshot only.
+      const providers = [...new Set(latestRows.map(r => r.litellm_provider).filter(p => p))].sort();
+      document.getElementById('provider-count').textContent = providers.length;
+      document.getElementById('provider-list').textContent = providers.join(', ');
     }
-
+ 
     function renderTable(rows) {
       if (rows.length === 0) return;
-
+ 
       const columns = Object.keys(rows[0]);
       const headRow = document.getElementById('table-head');
       columns.forEach(col => {
@@ -178,7 +204,7 @@
         th.textContent = col;
         headRow.appendChild(th);
       });
-
+ 
       const tbody = document.getElementById('table-body');
       rows.forEach(row => {
         const tr = document.createElement('tr');
@@ -191,7 +217,7 @@
         tbody.appendChild(tr);
       });
     }
-
+ 
     loadStatus();
   </script>
 </body>
