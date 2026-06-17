@@ -72,13 +72,13 @@ def main():
  
     # Remove any existing snapshot from today, so re-runs don't create duplicates
     # but older snapshots (history) are left untouched
-    supabase.table("litellm_pricing").delete().eq("snapshot_date", today).execute()
+    supabase.table("raw_litellm_pricing").delete().eq("snapshot_date", today).execute()
     print(f"Cleared any existing rows for {today}")
  
     batch_size = 500
     for i in range(0, len(rows), batch_size):
         batch = rows[i:i + batch_size]
-        supabase.table("litellm_pricing").insert(batch).execute()
+        supabase.table("raw_litellm_pricing").insert(batch).execute()
         print(f"Inserted rows {i + 1} to {i + len(batch)}")
  
     print("Done!")
