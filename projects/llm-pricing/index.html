@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LLM Pricing Dashboard - Connection Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>LLM Pricing Dashboard</h1>
+  <p id="status">Connecting to Supabase...</p>
+
+  <script>
+    const SUPABASE_URL = 'https://zqdvrgtahhejxqjtlbmq.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxZHZyZ3RhaGhlanhxanRsYm1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2Mzk4NTgsImV4cCI6MjA5NzIxNTg1OH0.CM4P4BE1UgS4sAiKC_QPKHqtbvD0oFZ5UKKz7ag9xK8';
+
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function testConnection() {
+      const statusEl = document.getElementById('status');
+
+      const { count, error } = await supabaseClient
+        .from('litellm_pricing')
+        .select('*', { count: 'exact', head: true });
+
+      if (error) {
+        statusEl.textContent = 'Connection failed: ' + error.message;
+        console.error(error);
+        return;
+      }
+
+      statusEl.textContent = 'Connected. Row count in litellm_pricing: ' + count;
+    }
+
+    testConnection();
+  </script>
+</body>
+</html>
