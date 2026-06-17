@@ -1,14 +1,84 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>LLM Pricing Dashboard - Summary</title>
+  <title>LLM Data Pull</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Georgia, serif;
+      max-width: 1000px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 4px 6px;
+      text-align: left;
+      white-space: nowrap;
+    }
+    th {
+      background-color: #f0f0f0;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+    }
+    dl {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      row-gap: 6px;
+    }
+    dt {
+      font-weight: bold;
+    }
+    dd {
+      margin: 0;
+    }
+  </style>
 </head>
 <body>
-  <h1>LLM Pricing Dashboard</h1>
-  <p id="status">Loading data...</p>
-  <pre id="summary"></pre>
+  <h1>LLM Data Pull</h1>
+ 
+  <dl>
+    <dt>Project Purpose</dt>
+    <dd>Pull LLM data into a Supabase table and show status on a webpage.</dd>
+ 
+    <dt>Refresh Cycle</dt>
+    <dd>Every Monday at 9am UTC, plus manual pulls</dd>
+ 
+    <dt>Source</dt>
+    <dd>LiteLLM</dd>
+ 
+    <dt>Earliest Date</dt>
+    <dd id="earliest-date">Loading...</dd>
+ 
+    <dt>Latest Date</dt>
+    <dd id="latest-date">Loading...</dd>
+ 
+    <dt>Total Days</dt>
+    <dd id="total-days">Loading...</dd>
+ 
+    <dt>Total Period (days)</dt>
+    <dd id="total-period">Loading...</dd>
+ 
+    <dt>Number of Rows</dt>
+    <dd id="row-count">Loading...</dd>
+  </dl>
+ 
+  <h2>Sample Data (20 models, most recent snapshot)</h2>
+  <div class="table-wrapper">
+    <table id="sample-table">
+      <thead><tr id="table-head"></tr></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
  
   <script>
     const SUPABASE_URL = 'https://zqdvrgtahhejxqjtlbmq.supabase.co';
@@ -16,118 +86,90 @@
  
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
  
-    const CAPABILITY_COLUMNS = [
-      'supports_vision',
-      'supports_function_calling',
-      'supports_parallel_function_calling',
-      'supports_tool_choice',
-      'supports_reasoning',
-      'supports_prompt_caching',
-      'supports_response_schema',
-      'supports_system_messages',
-      'supports_audio_input',
-      'supports_audio_output',
-      'supports_web_search'
-    ];
- 
-    function median(values) {
-      const sorted = [...values].sort((a, b) => a - b);
-      const mid = Math.floor(sorted.length / 2);
-      if (sorted.length % 2 === 0) {
-        return (sorted[mid - 1] + sorted[mid]) / 2;
+    function pickRandom(array, n) {
+      const copy = [...array];
+      const result = [];
+      while (result.length < n && copy.length > 0) {
+        const i = Math.floor(Math.random() * copy.length);
+        result.push(copy.splice(i, 1)[0]);
       }
-      return sorted[mid];
+      return result;
     }
  
-    function formatCost(value) {
-      return '$' + value.toFixed(4);
-    }
- 
-    async function loadSummary() {
-      const statusEl = document.getElementById('status');
-      const summaryEl = document.getElementById('summary');
- 
-      // Step 1: find the most recent snapshot_date in the table
-      const { data: latestRows, error: latestError } = await supabaseClient
+    async function loadStatus() {
+      // Get every distinct snapshot_date by pulling just that column.
+      // We explicitly raise the range past the default 1000 row cap so
+      // we see the true full set of dates, not a truncated slice.
+      const { data: dateRows, error: dateError } = await supabaseClient
         .from('raw_litellm_pricing')
         .select('snapshot_date')
-        .order('snapshot_date', { ascending: false })
-        .limit(1);
+        .range(0, 9999);
+ 
+      if (dateError) {
+        document.body.insertAdjacentHTML('beforeend', '<p>Failed to load dates: ' + dateError.message + '</p>');
+        console.error(dateError);
+        return;
+      }
+ 
+      const allDates = dateRows.map(r => r.snapshot_date);
+      const uniqueDates = [...new Set(allDates)].sort();
+      const earliestDate = uniqueDates[0];
+      const latestDate = uniqueDates[uniqueDates.length - 1];
+      const totalDays = uniqueDates.length;
+      const totalPeriod = Math.round((new Date(latestDate) - new Date(earliestDate)) / (1000 * 60 * 60 * 24));
+      const totalRows = allDates.length;
+ 
+      document.getElementById('earliest-date').textContent = earliestDate;
+      document.getElementById('latest-date').textContent = latestDate;
+      document.getElementById('total-days').textContent = totalDays;
+      document.getElementById('total-period').textContent = totalPeriod;
+      document.getElementById('row-count').textContent = totalRows;
+ 
+      // Now pull every row for the latest snapshot date, so we can
+      // randomly sample 20 from the full set rather than just the
+      // first 1000 rows returned.
+      const { data: latestRows, error: latestError } = await supabaseClient
+        .from('raw_litellm_pricing')
+        .select('*')
+        .eq('snapshot_date', latestDate)
+        .range(0, 9999);
  
       if (latestError) {
-        statusEl.textContent = 'Failed to find latest snapshot: ' + latestError.message;
+        document.body.insertAdjacentHTML('beforeend', '<p>Failed to load sample rows: ' + latestError.message + '</p>');
         console.error(latestError);
         return;
       }
  
-      const latestDate = latestRows[0].snapshot_date;
- 
-      // Step 2: pull every row for that snapshot date
-      const { data: rows, error: rowsError } = await supabaseClient
-        .from('raw_litellm_pricing')
-        .select('*')
-        .eq('snapshot_date', latestDate);
- 
-      if (rowsError) {
-        statusEl.textContent = 'Failed to load snapshot data: ' + rowsError.message;
-        console.error(rowsError);
-        return;
-      }
- 
-      statusEl.textContent = 'Snapshot date: ' + latestDate + ' (' + rows.length + ' rows)';
- 
-      // Total models and distinct providers
-      const totalModels = rows.length;
-      const providers = new Set(rows.map(r => r.litellm_provider));
-      const totalProviders = providers.size;
- 
-      // Filter to rows that actually have an input cost, since some rows have nulls
-      const rowsWithInputCost = rows.filter(r => r.input_cost_per_1m !== null && r.input_cost_per_1m !== undefined);
-      const rowsWithOutputCost = rows.filter(r => r.output_cost_per_1m !== null && r.output_cost_per_1m !== undefined);
- 
-      const inputCosts = rowsWithInputCost.map(r => r.input_cost_per_1m);
-      const outputCosts = rowsWithOutputCost.map(r => r.output_cost_per_1m);
- 
-      const avgInputCost = inputCosts.reduce((a, b) => a + b, 0) / inputCosts.length;
-      const avgOutputCost = outputCosts.reduce((a, b) => a + b, 0) / outputCosts.length;
-      const medianInputCost = median(inputCosts);
-      const medianOutputCost = median(outputCosts);
- 
-      const cheapestModel = rowsWithInputCost.reduce((min, r) => r.input_cost_per_1m < min.input_cost_per_1m ? r : min);
-      const mostExpensiveModel = rowsWithInputCost.reduce((max, r) => r.input_cost_per_1m > max.input_cost_per_1m ? r : max);
- 
-      // Capability counts
-      const capabilityCounts = {};
-      CAPABILITY_COLUMNS.forEach(col => {
-        capabilityCounts[col] = rows.filter(r => r[col] === true).length;
-      });
- 
-      // Build the text output
-      let output = '';
-      output += 'SNAPSHOT DATE: ' + latestDate + '\n';
-      output += '\n';
-      output += 'Total models tracked: ' + totalModels + '\n';
-      output += 'Distinct providers: ' + totalProviders + '\n';
-      output += '\n';
-      output += 'PRICING (per 1M tokens, models with known pricing only)\n';
-      output += 'Average input cost: ' + formatCost(avgInputCost) + '\n';
-      output += 'Median input cost: ' + formatCost(medianInputCost) + '\n';
-      output += 'Average output cost: ' + formatCost(avgOutputCost) + '\n';
-      output += 'Median output cost: ' + formatCost(medianOutputCost) + '\n';
-      output += '\n';
-      output += 'Cheapest model (by input cost): ' + cheapestModel.model + ' (' + cheapestModel.litellm_provider + ') at ' + formatCost(cheapestModel.input_cost_per_1m) + '\n';
-      output += 'Most expensive model (by input cost): ' + mostExpensiveModel.model + ' (' + mostExpensiveModel.litellm_provider + ') at ' + formatCost(mostExpensiveModel.input_cost_per_1m) + '\n';
-      output += '\n';
-      output += 'CAPABILITY BREAKDOWN (count of models supporting each)\n';
-      CAPABILITY_COLUMNS.forEach(col => {
-        const label = col.replace('supports_', '').replace(/_/g, ' ');
-        output += label + ': ' + capabilityCounts[col] + ' / ' + totalModels + '\n';
-      });
- 
-      summaryEl.textContent = output;
+      const sample = pickRandom(latestRows, 20);
+      renderTable(sample);
     }
  
-    loadSummary();
+    function renderTable(rows) {
+      if (rows.length === 0) return;
+ 
+      const columns = Object.keys(rows[0]);
+      const headRow = document.getElementById('table-head');
+      columns.forEach(col => {
+        const th = document.createElement('th');
+        th.textContent = col;
+        headRow.appendChild(th);
+      });
+ 
+      const tbody = document.getElementById('table-body');
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        columns.forEach(col => {
+          const td = document.createElement('td');
+          const value = row[col];
+          td.textContent = (value === null || value === undefined) ? '' : String(value);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
+ 
+    loadStatus();
   </script>
 </body>
 </html>
+ 
