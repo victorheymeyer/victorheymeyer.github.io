@@ -49,7 +49,7 @@
  
       // Step 1: find the most recent snapshot_date in the table
       const { data: latestRows, error: latestError } = await supabaseClient
-        .from('litellm_pricing')
+        .from('raw_litellm_pricing')
         .select('snapshot_date')
         .order('snapshot_date', { ascending: false })
         .limit(1);
@@ -64,7 +64,7 @@
  
       // Step 2: pull every row for that snapshot date
       const { data: rows, error: rowsError } = await supabaseClient
-        .from('litellm_pricing')
+        .from('raw_litellm_pricing')
         .select('*')
         .eq('snapshot_date', latestDate);
  
