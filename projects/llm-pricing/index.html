@@ -171,11 +171,11 @@
 
       document.getElementById('earliest-date').textContent = earliestDate;
       document.getElementById('latest-date').textContent = latestDate;
-      document.getElementById('total-days').textContent = totalDays;
-      document.getElementById('total-period').textContent = totalPeriod;
-      document.getElementById('total-rows').textContent = allDates.length;
-      document.getElementById('row-count-earliest').textContent = earliestRowCount;
-      document.getElementById('row-count-latest').textContent = latestRowCount;
+      document.getElementById('total-days').textContent = totalDays.toLocaleString();
+      document.getElementById('total-period').textContent = totalPeriod.toLocaleString();
+      document.getElementById('total-rows').textContent = allDates.length.toLocaleString();
+      document.getElementById('row-count-earliest').textContent = earliestRowCount.toLocaleString();
+      document.getElementById('row-count-latest').textContent = latestRowCount.toLocaleString();
 
       // Now pull every row for the latest snapshot date, so we can
       // randomly sample 20 from the full set rather than just a
@@ -194,7 +194,7 @@
 
       // Provider count and list, based on the most recent snapshot only.
       const providers = [...new Set(latestRows.map(r => r.litellm_provider).filter(p => p))].sort();
-      document.getElementById('provider-count').textContent = providers.length;
+      document.getElementById('provider-count').textContent = providers.length.toLocaleString();
       document.getElementById('provider-list').textContent = providers.join(', ');
     }
 
