@@ -1,0 +1,27 @@
+name: Fetch Airbnb Jobs
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"    # Mondays at 09:00 UTC
+  workflow_dispatch:         # lets you run it by hand from the Actions tab
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r projects/airbnb-jobs/requirements.txt
+
+      - name: Fetch and load jobs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python projects/airbnb-jobs/fetch_jobs.py
