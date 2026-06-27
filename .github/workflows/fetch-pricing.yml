@@ -1,29 +1,28 @@
 name: Fetch LLM Pricing Data
- 
+
 on:
   schedule:
     - cron: "0 9 * * *"
   workflow_dispatch:
- 
+
 jobs:
   fetch-pricing:
     runs-on: ubuntu-latest
- 
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
- 
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
- 
+
       - name: Install dependencies
         run: pip install supabase
- 
+
       - name: Run fetch script
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python projects/llm-pricing/fetch_pricing.py
- 
+        run: python projects/llm-data/fetch_pricing.py
