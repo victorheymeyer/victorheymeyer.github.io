@@ -85,6 +85,10 @@
 
   <p><strong>Note:</strong> the raw <code>model</code> column is a Routing Key/Model ID, a compound string that bundles the model family, vendor/platform namespace, and sometimes a hosting location or packaging suffix.</p>
 
+  <h2>Daily Row Count Trend (Last 30 Days)</h2>
+  <p>Shows the most recent 30 calendar days. Days with no snapshot are skipped, the line connects the nearest days that do have data.</p>
+  <canvas id="daily-trend-chart" width="900" height="300"></canvas>
+
   <h2>Weekly Row Count Trend</h2>
   <p>Each point shows the highest single-day row count seen within that week (handles multiple pulls per week if they happen).</p>
   <canvas id="trend-chart" width="900" height="300"></canvas>
@@ -181,6 +185,25 @@
       document.getElementById('row-count-earliest').textContent = earliestRowCount.toLocaleString();
       document.getElementById('row-count-latest').textContent = latestRowCount.toLocaleString();
 
+      // --- Daily chart data prep ---
+      // Build a fixed list of the most recent 30 calendar days (ending
+      // at the latest snapshot date), and look up that day's row count
+      // if one exists. Days with no data get a null value, which the
+      // chart drawing function will skip over when drawing the line,
+      // while still reserving their x-axis position.
+      const DAYS_TO_SHOW = 30;
+      const latestDateObj = new Date(latestDate + 'T00:00:00Z');
+      const dailyData = [];
+      for (let i = DAYS_TO_SHOW - 1; i >= 0; i--) {
+        const d = new Date(latestDateObj);
+        d.setUTCDate(d.getUTCDate() - i);
+        const dayStr = d.toISOString().slice(0, 10);
+        const value = rowCountByDate[dayStr] !== undefined ? rowCountByDate[dayStr] : null;
+        dailyData.push({ label: dayStr, value: value });
+      }
+      drawTrendChart('daily-trend-chart', dailyData);
+
+      // --- Weekly chart data prep ---
       // Group dates by week (using the Monday of that week as the bucket
       // key), then take the max row count seen within each week. This
       // correctly handles multiple snapshots in the same week.
@@ -202,8 +225,8 @@
       });
 
       const weekKeys = Object.keys(maxRowsByWeek).sort();
-      const weeklyData = weekKeys.map(week => ({ week, value: maxRowsByWeek[week] }));
-      drawTrendChart(weeklyData);
+      const weeklyData = weekKeys.map(week => ({ label: week, value: maxRowsByWeek[week] }));
+      drawTrendChart('trend-chart', weeklyData);
 
       // Now pull every row for the latest snapshot date, so we can
       // randomly sample 20 from the full set rather than just a
@@ -226,8 +249,13 @@
       document.getElementById('provider-list').textContent = providers.join(', ');
     }
 
-    function drawTrendChart(weeklyData) {
-      const canvas = document.getElementById('trend-chart');
+    // Shared chart drawing function. Used for both the daily (fixed
+    // 30-slot, gaps allowed) and weekly (one point per week present)
+    // charts. Each entry in `data` is { label, value }, where value
+    // may be null to indicate a gap that should be skipped when
+    // drawing the connecting line, while still reserving its x position.
+    function drawTrendChart(canvasId, data) {
+      const canvas = document.getElementById(canvasId);
       const ctx = canvas.getContext('2d');
       const width = canvas.width;
       const height = canvas.height;
@@ -237,15 +265,22 @@
 
       ctx.clearRect(0, 0, width, height);
 
-      if (weeklyData.length === 0) {
+      if (data.length === 0) {
         ctx.font = '14px Georgia';
         ctx.fillText('No data to display yet.', padding.left, height / 2);
         return;
       }
 
-      const values = weeklyData.map(d => d.value);
-      const minValue = Math.min(...values);
-      const maxValue = Math.max(...values);
+      const knownValues = data.map(d => d.value).filter(v => v !== null && v !== undefined);
+
+      if (knownValues.length === 0) {
+        ctx.font = '14px Georgia';
+        ctx.fillText('No data to display yet.', padding.left, height / 2);
+        return;
+      }
+
+      const minValue = Math.min(...knownValues);
+      const maxValue = Math.max(...knownValues);
 
       // Add a little headroom so points don't sit exactly on the edges.
       // If all values are equal, force a small range so the line isn't
@@ -255,8 +290,8 @@
       const yMax = maxValue + valueRange * 0.1;
 
       function xForIndex(i) {
-        if (weeklyData.length === 1) return padding.left + plotWidth / 2;
-        return padding.left + (i / (weeklyData.length - 1)) * plotWidth;
+        if (data.length === 1) return padding.left + plotWidth / 2;
+        return padding.left + (i / (data.length - 1)) * plotWidth;
       }
       function yForValue(v) {
         return padding.top + plotHeight - ((v - yMin) / (yMax - yMin)) * plotHeight;
@@ -287,36 +322,45 @@
         ctx.stroke();
       }
 
-      // X axis labels (week start dates), rotated if there are many weeks
+      // X axis labels, rotated if there are many points to avoid overlap
       ctx.textAlign = 'center';
       ctx.fillStyle = '#333';
-      weeklyData.forEach((d, i) => {
+      data.forEach((d, i) => {
         const x = xForIndex(i);
         ctx.save();
         ctx.translate(x, padding.top + plotHeight + 15);
-        if (weeklyData.length > 8) {
+        if (data.length > 8) {
           ctx.rotate(-Math.PI / 4);
           ctx.textAlign = 'right';
         }
-        ctx.fillText(d.week, 0, 0);
+        ctx.fillText(d.label, 0, 0);
         ctx.restore();
       });
 
-      // Line connecting each week's point
+      // Line connecting points, skipping over any null values so the
+      // line jumps straight from the last known point to the next
+      // known point, rather than breaking or treating null as zero.
       ctx.strokeStyle = '#2a6fdb';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      weeklyData.forEach((d, i) => {
+      let started = false;
+      data.forEach((d, i) => {
+        if (d.value === null || d.value === undefined) return;
         const x = xForIndex(i);
         const y = yForValue(d.value);
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
       });
       ctx.stroke();
 
-      // Points on top of the line
+      // Points on top of the line, only for days/weeks with actual data
       ctx.fillStyle = '#2a6fdb';
-      weeklyData.forEach((d, i) => {
+      data.forEach((d, i) => {
+        if (d.value === null || d.value === undefined) return;
         const x = xForIndex(i);
         const y = yForValue(d.value);
         ctx.beginPath();
