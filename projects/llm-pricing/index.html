@@ -83,7 +83,11 @@
     <dd id="provider-list">Loading...</dd>
   </dl>
 
-  <p><strong>Note:</strong> each row is considered a "Model," but a row actually represents Model + Location + Vendor, since the same underlying model can appear multiple times across different hosting locations and resellers.</p>
+  <p><strong>Note:</strong> the raw <code>model</code> column is a Routing Key/Model ID, a compound string that bundles the model family, vendor/platform namespace, and sometimes a hosting location or packaging suffix. A row actually represents Model + Location + Vendor, since the same underlying model can appear multiple times under different Routing Keys across hosting locations and resellers.</p>
+
+  <h2>Weekly Row Count Trend</h2>
+  <p>Each point shows the highest single-day row count seen within that week (handles multiple pulls per week if they happen).</p>
+  <canvas id="trend-chart" width="900" height="300"></canvas>
 
   <h2>Sample Data (20 models, most recent snapshot)</h2>
   <div class="table-wrapper">
@@ -177,6 +181,30 @@
       document.getElementById('row-count-earliest').textContent = earliestRowCount.toLocaleString();
       document.getElementById('row-count-latest').textContent = latestRowCount.toLocaleString();
 
+      // Group dates by week (using the Monday of that week as the bucket
+      // key), then take the max row count seen within each week. This
+      // correctly handles multiple snapshots in the same week.
+      function getMondayOfWeek(dateStr) {
+        const d = new Date(dateStr + 'T00:00:00Z');
+        const day = d.getUTCDay(); // 0 = Sunday, 1 = Monday, ...
+        const diff = (day === 0 ? -6 : 1) - day;
+        d.setUTCDate(d.getUTCDate() + diff);
+        return d.toISOString().slice(0, 10);
+      }
+
+      const maxRowsByWeek = {};
+      Object.keys(rowCountByDate).forEach(date => {
+        const weekKey = getMondayOfWeek(date);
+        const rowsThatDay = rowCountByDate[date];
+        if (!maxRowsByWeek[weekKey] || rowsThatDay > maxRowsByWeek[weekKey]) {
+          maxRowsByWeek[weekKey] = rowsThatDay;
+        }
+      });
+
+      const weekKeys = Object.keys(maxRowsByWeek).sort();
+      const weeklyData = weekKeys.map(week => ({ week, value: maxRowsByWeek[week] }));
+      drawTrendChart(weeklyData);
+
       // Now pull every row for the latest snapshot date, so we can
       // randomly sample 20 from the full set rather than just a
       // partial batch.
@@ -196,6 +224,105 @@
       const providers = [...new Set(latestRows.map(r => r.litellm_provider).filter(p => p))].sort();
       document.getElementById('provider-count').textContent = providers.length.toLocaleString();
       document.getElementById('provider-list').textContent = providers.join(', ');
+    }
+
+    function drawTrendChart(weeklyData) {
+      const canvas = document.getElementById('trend-chart');
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      const padding = { top: 20, right: 30, bottom: 50, left: 60 };
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+
+      ctx.clearRect(0, 0, width, height);
+
+      if (weeklyData.length === 0) {
+        ctx.font = '14px Georgia';
+        ctx.fillText('No data to display yet.', padding.left, height / 2);
+        return;
+      }
+
+      const values = weeklyData.map(d => d.value);
+      const minValue = Math.min(...values);
+      const maxValue = Math.max(...values);
+
+      // Add a little headroom so points don't sit exactly on the edges.
+      // If all values are equal, force a small range so the line isn't
+      // drawn flat against an axis.
+      const valueRange = maxValue - minValue || 1;
+      const yMin = Math.max(0, minValue - valueRange * 0.1);
+      const yMax = maxValue + valueRange * 0.1;
+
+      function xForIndex(i) {
+        if (weeklyData.length === 1) return padding.left + plotWidth / 2;
+        return padding.left + (i / (weeklyData.length - 1)) * plotWidth;
+      }
+      function yForValue(v) {
+        return padding.top + plotHeight - ((v - yMin) / (yMax - yMin)) * plotHeight;
+      }
+
+      // Axes
+      ctx.strokeStyle = '#888';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, padding.top);
+      ctx.lineTo(padding.left, padding.top + plotHeight);
+      ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
+      ctx.stroke();
+
+      // Y axis labels (5 ticks, dynamically scaled to the data range)
+      ctx.fillStyle = '#333';
+      ctx.font = '11px Georgia';
+      ctx.textAlign = 'right';
+      const yTicks = 5;
+      for (let t = 0; t <= yTicks; t++) {
+        const value = yMin + (t / yTicks) * (yMax - yMin);
+        const y = yForValue(value);
+        ctx.fillText(Math.round(value).toLocaleString(), padding.left - 8, y + 4);
+        ctx.strokeStyle = '#eee';
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(padding.left + plotWidth, y);
+        ctx.stroke();
+      }
+
+      // X axis labels (week start dates), rotated if there are many weeks
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#333';
+      weeklyData.forEach((d, i) => {
+        const x = xForIndex(i);
+        ctx.save();
+        ctx.translate(x, padding.top + plotHeight + 15);
+        if (weeklyData.length > 8) {
+          ctx.rotate(-Math.PI / 4);
+          ctx.textAlign = 'right';
+        }
+        ctx.fillText(d.week, 0, 0);
+        ctx.restore();
+      });
+
+      // Line connecting each week's point
+      ctx.strokeStyle = '#2a6fdb';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      weeklyData.forEach((d, i) => {
+        const x = xForIndex(i);
+        const y = yForValue(d.value);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // Points on top of the line
+      ctx.fillStyle = '#2a6fdb';
+      weeklyData.forEach((d, i) => {
+        const x = xForIndex(i);
+        const y = yForValue(d.value);
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
     }
 
     function renderTable(rows) {
