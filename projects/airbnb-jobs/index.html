@@ -44,7 +44,7 @@
                   text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid var(--line); padding:6px 8px; }
   table.jobs td { padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
   table.jobs tr:hover td { background:#fafafa; }
-  table.jobs a { color:var(--accent); text-decoration:none; }
+  table.jobs a { color:#0077b6; text-decoration:none; }
   table.jobs a:hover { text-decoration:underline; }
   .clearlink { font-size:0.8rem; color:var(--muted); cursor:pointer; text-decoration:underline; margin-left:4px; }
 </style>
@@ -74,6 +74,14 @@
       <canvas id="chart" width="860" height="360"></canvas>
       <div class="legend" id="legend"></div>
     </div>
+    
+    <div class="panel">
+      <h2>Latest snapshot breakdown</h2>
+      <div class="row">
+        <div><strong>Top departments</strong><ul class="mini" id="top-depts"></ul></div>
+        <div><strong>Top locations</strong><ul class="mini" id="top-locs"></ul></div>
+      </div>
+    </div>
 
     <div class="panel">
       <h2>Current openings · Seattle, Bellevue &amp; Remote-US</h2>
@@ -85,13 +93,6 @@
       </table>
     </div>
 
-    <div class="panel">
-      <h2>Latest snapshot breakdown</h2>
-      <div class="row">
-        <div><strong>Top departments</strong><ul class="mini" id="top-depts"></ul></div>
-        <div><strong>Top locations</strong><ul class="mini" id="top-locs"></ul></div>
-      </div>
-    </div>
   </div>
 
   <footer id="foot"></footer>
