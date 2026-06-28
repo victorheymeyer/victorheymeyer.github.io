@@ -88,7 +88,7 @@
       <div class="filter" id="dept-filter"></div>
       <div id="jobs-count"></div>
       <table class="jobs">
-        <thead><tr><th>Role</th><th>Department</th><th>Location</th><th>Published</th><th>First seen</th></tr></thead>
+        <thead><tr><th>Role</th><th>Department</th><th>Location</th><th>Age</th></tr></thead>
         <tbody id="jobs-body"></tbody>
       </table>
     </div>
@@ -273,6 +273,24 @@ function buildTableJobs(rows) {
   return out;
 }
 
+// Raw age in days: published date (preferred) or first-seen (fallback). N/A -> Infinity so it sorts last.
+function ageDays(job) {
+  const src = job.first_published || FIRST_SEEN.get(job.job_id);
+  if (!src) return Infinity;
+  const then = new Date(src.slice(0, 10) + "T00:00:00Z");
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return Math.floor((today - then) / 86400000);
+}
+
+function ageLabel(job) {
+  const days = ageDays(job);
+  if (days === Infinity) return "N/A";
+  if (days <= 0) return "Today";
+  if (days === 1) return "1 day";
+  return `${days} days`;
+}
+
 function renderDeptFilter() {
   const depts = [...new Set(TABLE_JOBS.flatMap(j => j.depts))].sort();
   const box = document.getElementById("dept-filter");
@@ -297,21 +315,19 @@ function renderTable() {
   const jobs = TABLE_JOBS
     .filter(j => sel.size === 0 || j.depts.some(d => sel.has(d)))
     .sort((a,b) => {
-      const ga = TARGET_ORDER.indexOf(a.group), gb = TARGET_ORDER.indexOf(b.group);
-      return ga !== gb ? ga - gb : a.title.localeCompare(b.title);
+      const da = Math.max(0, ageDays(a)), db = Math.max(0, ageDays(b));
+      if (da !== db) return da - db;            // youngest first; N/A (Infinity) sinks to bottom
+      return a.title.localeCompare(b.title);    // tiebreaker
     });
   document.getElementById("jobs-body").innerHTML = jobs.map(j => {
-    const published = j.first_published ? j.first_published.slice(0, 10) : "—";
-    const firstSeen = FIRST_SEEN.get(j.job_id) || "—";
     return `
     <tr>
       <td><a href="${escapeHtml(j.url)}" target="_blank" rel="noopener">${escapeHtml(j.title)}</a></td>
       <td>${escapeHtml(j.depts.join(", "))}</td>
       <td>${escapeHtml(j.group)}</td>
-      <td>${escapeHtml(published)}</td>
-      <td>${escapeHtml(firstSeen)}</td>
+      <td>${escapeHtml(ageLabel(j))}</td>
     </tr>`;
-  }).join("") || `<tr><td colspan="5" style="color:var(--muted)">No matching roles.</td></tr>`;
+  }).join("") || `<tr><td colspan="4" style="color:var(--muted)">No matching roles.</td></tr>`;
   document.getElementById("jobs-count").textContent =
     `Showing ${jobs.length} of ${TABLE_JOBS.length} roles in these locations` +
     (sel.size ? ` · filtered to ${sel.size} department${sel.size>1?"s":""}` : " · all departments");
