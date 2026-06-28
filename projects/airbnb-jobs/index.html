@@ -74,7 +74,7 @@
       <canvas id="chart" width="860" height="360"></canvas>
       <div class="legend" id="legend"></div>
     </div>
-    
+
     <div class="panel">
       <h2>Latest snapshot breakdown</h2>
       <div class="row">
@@ -88,11 +88,10 @@
       <div class="filter" id="dept-filter"></div>
       <div id="jobs-count"></div>
       <table class="jobs">
-        <thead><tr><th>Role</th><th>Department</th><th>Location</th></tr></thead>
+        <thead><tr><th>Role</th><th>Department</th><th>Location</th><th>Published</th><th>First seen</th></tr></thead>
         <tbody id="jobs-body"></tbody>
       </table>
     </div>
-
   </div>
 
   <footer id="foot"></footer>
@@ -109,6 +108,7 @@ const TARGET_ORDER = ["Seattle, WA", "Bellevue, WA", "Remote - US"];
 let DATA = null, MODE = "total";
 let TABLE_JOBS = [];
 let SELECTED_DEPTS = new Set();
+let FIRST_SEEN = new Map();
 
 const normLoc = s => (s || "").trim().replace(/\s+/g, " ");
 const escapeHtml = s => String(s).replace(/[&<>"']/g,
@@ -131,7 +131,7 @@ async function fetchAllLight() {
   while (true) {
     const { data, error } = await supabaseClient
       .from("raw_airbnb_jobs")
-      .select("snapshot_date, location_name, departments")
+      .select("snapshot_date, location_name, departments, job_id")
       .order("snapshot_date", { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
@@ -146,11 +146,21 @@ async function fetchLatestJobs(latestDate) {
   // One snapshot (~235 rows, under the cap) with the display columns the table needs.
   const { data, error } = await supabaseClient
     .from("raw_airbnb_jobs")
-    .select("title, absolute_url, location_name, departments")
+    .select("title, absolute_url, location_name, departments, first_published, job_id")
     .eq("snapshot_date", latestDate)
     .limit(1000);
   if (error) throw error;
   return data;
+}
+
+// Earliest snapshot_date we have ever recorded for each job_id.
+function buildFirstSeen(rows) {
+  const seen = new Map();
+  for (const r of rows) {
+    const cur = seen.get(r.job_id);
+    if (!cur || r.snapshot_date < cur) seen.set(r.job_id, r.snapshot_date);
+  }
+  return seen;
 }
 
 // --- aggregation for chart + breakdown ---
@@ -255,7 +265,9 @@ function buildTableJobs(rows) {
       url: r.absolute_url || "#",
       location: normLoc(r.location_name),
       group: grp,
-      depts: depts.length ? depts : ["(none)"]
+      depts: depts.length ? depts : ["(none)"],
+      first_published: r.first_published,
+      job_id: r.job_id
     });
   }
   return out;
@@ -288,12 +300,18 @@ function renderTable() {
       const ga = TARGET_ORDER.indexOf(a.group), gb = TARGET_ORDER.indexOf(b.group);
       return ga !== gb ? ga - gb : a.title.localeCompare(b.title);
     });
-  document.getElementById("jobs-body").innerHTML = jobs.map(j => `
+  document.getElementById("jobs-body").innerHTML = jobs.map(j => {
+    const published = j.first_published ? j.first_published.slice(0, 10) : "—";
+    const firstSeen = FIRST_SEEN.get(j.job_id) || "—";
+    return `
     <tr>
       <td><a href="${escapeHtml(j.url)}" target="_blank" rel="noopener">${escapeHtml(j.title)}</a></td>
       <td>${escapeHtml(j.depts.join(", "))}</td>
       <td>${escapeHtml(j.group)}</td>
-    </tr>`).join("") || `<tr><td colspan="3" style="color:var(--muted)">No matching roles.</td></tr>`;
+      <td>${escapeHtml(published)}</td>
+      <td>${escapeHtml(firstSeen)}</td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="5" style="color:var(--muted)">No matching roles.</td></tr>`;
   document.getElementById("jobs-count").textContent =
     `Showing ${jobs.length} of ${TABLE_JOBS.length} roles in these locations` +
     (sel.size ? ` · filtered to ${sel.size} department${sel.size>1?"s":""}` : " · all departments");
@@ -304,6 +322,7 @@ async function init() {
     const lightRows = await fetchAllLight();
     if (!lightRows.length) { document.getElementById("status").textContent = "No data yet."; return; }
     DATA = aggregate(lightRows);
+    FIRST_SEEN = buildFirstSeen(lightRows);
     fillStatus(lightRows);
     drawChart();
 
