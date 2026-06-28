@@ -32,6 +32,21 @@
   .legend span { display:inline-flex; align-items:center; gap:5px; }
   .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
   footer { color: var(--muted); font-size:0.8rem; margin-top:28px; }
+
+  /* jobs table + filter */
+  .filter { display:flex; flex-wrap:wrap; gap:10px 16px; margin-bottom:14px; }
+  .chk { font-size:0.85rem; display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+         background:var(--bg); border:1px solid var(--line); border-radius:20px; padding:3px 10px; }
+  .chk input { margin:0; }
+  #jobs-count { color:var(--muted); font-size:0.85rem; margin-bottom:8px; }
+  table.jobs { width:100%; border-collapse:collapse; font-size:0.9rem; }
+  table.jobs th { text-align:left; color:var(--muted); font-weight:600; font-size:0.75rem;
+                  text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid var(--line); padding:6px 8px; }
+  table.jobs td { padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  table.jobs tr:hover td { background:#fafafa; }
+  table.jobs a { color:var(--accent); text-decoration:none; }
+  table.jobs a:hover { text-decoration:underline; }
+  .clearlink { font-size:0.8rem; color:var(--muted); cursor:pointer; text-decoration:underline; margin-left:4px; }
 </style>
 </head>
 <body>
@@ -61,6 +76,16 @@
     </div>
 
     <div class="panel">
+      <h2>Current openings · Seattle, Bellevue &amp; Remote-US</h2>
+      <div class="filter" id="dept-filter"></div>
+      <div id="jobs-count"></div>
+      <table class="jobs">
+        <thead><tr><th>Role</th><th>Department</th><th>Location</th></tr></thead>
+        <tbody id="jobs-body"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
       <h2>Latest snapshot breakdown</h2>
       <div class="row">
         <div><strong>Top departments</strong><ul class="mini" id="top-depts"></ul></div>
@@ -74,17 +99,32 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = "https://zqdvrgtahhejxqjtlbmq.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxZHZyZ3RhaGhlanhxanRsYm1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2Mzk4NTgsImV4cCI6MjA5NzIxNTg1OH0.CM4P4BE1UgS4sAiKC_QPKHqtbvD0oFZ5UKKz7ag9xK8";
+const SUPABASE_ANON_KEY = "PASTE_YOUR_ANON_PUBLIC_KEY_HERE";   // <-- same key as your LLM page
 
-// CDN sets a global called `supabase`; name our client differently to avoid the collision.
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const PALETTE = ["#ff5a5f","#0077b6","#2a9d8f","#e9c46a","#9b5de5","#f15bb5","#00bbf9","#8d99ae"];
-let DATA = null;       // aggregated structure
-let MODE = "total";
+const TARGET_ORDER = ["Seattle, WA", "Bellevue, WA", "Remote - US"];
+let DATA = null, MODE = "total";
+let TABLE_JOBS = [];
+let SELECTED_DEPTS = new Set();
 
-async function fetchAllRows() {
-  // Paginate: Supabase silently caps responses at 1000 rows.
+const normLoc = s => (s || "").trim().replace(/\s+/g, " ");
+const escapeHtml = s => String(s).replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// Loose, case-insensitive matching since the source location strings are messy.
+function locationGroup(rawLoc) {
+  const s = normLoc(rawLoc);
+  if (/seattle/i.test(s)) return "Seattle, WA";
+  if (/bellevue/i.test(s)) return "Bellevue, WA";
+  if (/remote/i.test(s) && /\bus(a)?\b/i.test(s)) return "Remote - US";
+  return null;
+}
+
+// --- data fetching ---
+async function fetchAllLight() {
+  // All snapshots, light columns only. Paginate around Supabase's 1000-row cap.
   const pageSize = 1000;
   let from = 0, all = [];
   while (true) {
@@ -101,10 +141,20 @@ async function fetchAllRows() {
   return all;
 }
 
+async function fetchLatestJobs(latestDate) {
+  // One snapshot (~235 rows, under the cap) with the display columns the table needs.
+  const { data, error } = await supabaseClient
+    .from("raw_airbnb_jobs")
+    .select("title, absolute_url, location_name, departments")
+    .eq("snapshot_date", latestDate)
+    .limit(1000);
+  if (error) throw error;
+  return data;
+}
+
+// --- aggregation for chart + breakdown ---
 function aggregate(rows) {
-  const totalByDate = new Map();
-  const deptByDate = new Map();   // date -> Map(dept -> count)
-  const locByDate = new Map();    // date -> Map(loc  -> count)
+  const totalByDate = new Map(), deptByDate = new Map(), locByDate = new Map();
   for (const r of rows) {
     const d = r.snapshot_date;
     totalByDate.set(d, (totalByDate.get(d) || 0) + 1);
@@ -120,14 +170,13 @@ function aggregate(rows) {
 
     if (!locByDate.has(d)) locByDate.set(d, new Map());
     const lm = locByDate.get(d);
-    const loc = (r.location_name || "(none)").trim().replace(/\s+/g, " ");
+    const loc = normLoc(r.location_name) || "(none)";   // merges whitespace variants
     lm.set(loc, (lm.get(loc) || 0) + 1);
   }
   const dates = [...totalByDate.keys()].sort();
   return { dates, totalByDate, deptByDate, locByDate };
 }
 
-// Pick the top-N series names by their count in the latest snapshot.
 function topSeries(byDate, latestDate, n) {
   const latest = byDate.get(latestDate) || new Map();
   return [...latest.entries()].sort((a,b) => b[1]-a[1]).slice(0, n).map(e => e[0]);
@@ -136,74 +185,44 @@ function topSeries(byDate, latestDate, n) {
 function buildSeries() {
   const { dates, totalByDate, deptByDate, locByDate } = DATA;
   const latest = dates[dates.length - 1];
-  if (MODE === "total") {
-    return [{ label:"All open roles", color:PALETTE[0],
-              values: dates.map(d => totalByDate.get(d) || 0) }];
-  }
+  if (MODE === "total")
+    return [{ label:"All open roles", color:PALETTE[0], values: dates.map(d => totalByDate.get(d) || 0) }];
   const byDate = MODE === "dept" ? deptByDate : locByDate;
-  const names = topSeries(byDate, latest, 8);
-  return names.map((name, i) => ({
+  return topSeries(byDate, latest, 8).map((name, i) => ({
     label: name, color: PALETTE[i % PALETTE.length],
     values: dates.map(d => (byDate.get(d)?.get(name)) || 0)
   }));
 }
 
 function drawChart() {
-  const series = buildSeries();
-  const dates = DATA.dates;
-  const cv = document.getElementById("chart");
-  const dpr = window.devicePixelRatio || 1;
-  const W = cv.width, H = cv.height;
-  cv.width = W * dpr; cv.height = H * dpr;
-  cv.style.height = (H) + "px";
-  const ctx = cv.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0,0,W,H);
-
-  const padL=46, padR=16, padT=14, padB=34;
-  const plotW = W - padL - padR, plotH = H - padT - padB;
-  let maxV = 0;
-  for (const s of series) for (const v of s.values) if (v > maxV) maxV = v;
+  const series = buildSeries(), dates = DATA.dates, cv = document.getElementById("chart");
+  const dpr = window.devicePixelRatio || 1, W = 860, H = 360;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + "px";
+  const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr); ctx.clearRect(0,0,W,H);
+  const padL=46, padR=16, padT=14, padB=34, plotW = W-padL-padR, plotH = H-padT-padB;
+  let maxV = 0; for (const s of series) for (const v of s.values) if (v > maxV) maxV = v;
   maxV = Math.max(maxV, 1) * 1.1;
-
-  // axes + horizontal gridlines
   ctx.strokeStyle = "#eee"; ctx.fillStyle = "#999"; ctx.font = "11px sans-serif";
   ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  const ticks = 4;
-  for (let i=0; i<=ticks; i++) {
-    const val = Math.round(maxV * i/ticks);
-    const y = padT + plotH - (val/maxV)*plotH;
+  for (let i=0; i<=4; i++) {
+    const val = Math.round(maxV * i/4), y = padT + plotH - (val/maxV)*plotH;
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W-padR, y); ctx.stroke();
     ctx.fillText(val, padL-6, y);
   }
-  // x labels
   ctx.textAlign = "center"; ctx.textBaseline = "top";
-  const xFor = i => dates.length === 1 ? padL + plotW/2
-                   : padL + (i/(dates.length-1))*plotW;
+  const xFor = i => dates.length === 1 ? padL + plotW/2 : padL + (i/(dates.length-1))*plotW;
   dates.forEach((d,i) => {
     if (dates.length > 10 && i % Math.ceil(dates.length/10) !== 0) return;
-    ctx.fillText(d.slice(5), xFor(i), padT+plotH+6);  // MM-DD
+    ctx.fillText(d.slice(5), xFor(i), padT+plotH+6);
   });
-
-  // series lines
   for (const s of series) {
-    ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = 2;
-    ctx.beginPath();
-    s.values.forEach((v,i) => {
-      const x = xFor(i), y = padT + plotH - (v/maxV)*plotH;
-      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
-    });
+    ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = 2; ctx.beginPath();
+    s.values.forEach((v,i) => { const x=xFor(i), y=padT+plotH-(v/maxV)*plotH; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
     ctx.stroke();
-    s.values.forEach((v,i) => {
-      const x = xFor(i), y = padT + plotH - (v/maxV)*plotH;
-      ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
-    });
+    s.values.forEach((v,i) => { const x=xFor(i), y=padT+plotH-(v/maxV)*plotH; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill(); });
   }
-
-  // legend (skip for single total line)
-  const leg = document.getElementById("legend");
-  leg.innerHTML = MODE === "total" ? "" :
-    series.map(s => `<span><span class="dot" style="background:${s.color}"></span>${s.label}</span>`).join("");
+  document.getElementById("legend").innerHTML = MODE === "total" ? "" :
+    series.map(s => `<span><span class="dot" style="background:${s.color}"></span>${escapeHtml(s.label)}</span>`).join("");
 }
 
 function fillStatus(rows) {
@@ -213,32 +232,91 @@ function fillStatus(rows) {
   document.getElementById("c-snaps").textContent = dates.length;
   document.getElementById("c-depts").textContent = (deptByDate.get(latest) || new Map()).size;
   document.getElementById("c-locs").textContent  = (locByDate.get(latest) || new Map()).size;
-
   const list = (map, id) => {
     const top = [...map.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
-    document.getElementById(id).innerHTML =
-      top.map(([k,v]) => `<li><span>${k}</span><span>${v}</span></li>`).join("");
+    document.getElementById(id).innerHTML = top.map(([k,v]) => `<li><span>${escapeHtml(k)}</span><span>${v}</span></li>`).join("");
   };
   list(deptByDate.get(latest) || new Map(), "top-depts");
   list(locByDate.get(latest) || new Map(), "top-locs");
-
   document.getElementById("foot").textContent =
     `Snapshots ${dates[0]} → ${latest} · ${rows.length} total rows · data from Airbnb's public Greenhouse board`;
 }
 
+// --- jobs table for target locations ---
+function buildTableJobs(rows) {
+  const out = [];
+  for (const r of rows) {
+    const grp = locationGroup(r.location_name);
+    if (!grp) continue;
+    const depts = (r.departments || []).map(d => d.name || "(unknown)");
+    out.push({
+      title: r.title || "(untitled)",
+      url: r.absolute_url || "#",
+      location: normLoc(r.location_name),
+      group: grp,
+      depts: depts.length ? depts : ["(none)"]
+    });
+  }
+  return out;
+}
+
+function renderDeptFilter() {
+  const depts = [...new Set(TABLE_JOBS.flatMap(j => j.depts))].sort();
+  const box = document.getElementById("dept-filter");
+  box.innerHTML =
+    depts.map(d => `<label class="chk"><input type="checkbox" value="${escapeHtml(d)}"> ${escapeHtml(d)}</label>`).join("")
+    + `<span class="clearlink" id="clear-depts">clear</span>`;
+  box.querySelectorAll('input[type=checkbox]').forEach(cb =>
+    cb.addEventListener("change", () => {
+      cb.checked ? SELECTED_DEPTS.add(cb.value) : SELECTED_DEPTS.delete(cb.value);
+      renderTable();
+    })
+  );
+  document.getElementById("clear-depts").addEventListener("click", () => {
+    SELECTED_DEPTS.clear();
+    box.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
+    renderTable();
+  });
+}
+
+function renderTable() {
+  const sel = SELECTED_DEPTS;
+  const jobs = TABLE_JOBS
+    .filter(j => sel.size === 0 || j.depts.some(d => sel.has(d)))
+    .sort((a,b) => {
+      const ga = TARGET_ORDER.indexOf(a.group), gb = TARGET_ORDER.indexOf(b.group);
+      return ga !== gb ? ga - gb : a.title.localeCompare(b.title);
+    });
+  document.getElementById("jobs-body").innerHTML = jobs.map(j => `
+    <tr>
+      <td><a href="${escapeHtml(j.url)}" target="_blank" rel="noopener">${escapeHtml(j.title)}</a></td>
+      <td>${escapeHtml(j.depts.join(", "))}</td>
+      <td>${escapeHtml(j.group)}</td>
+    </tr>`).join("") || `<tr><td colspan="3" style="color:var(--muted)">No matching roles.</td></tr>`;
+  document.getElementById("jobs-count").textContent =
+    `Showing ${jobs.length} of ${TABLE_JOBS.length} roles in these locations` +
+    (sel.size ? ` · filtered to ${sel.size} department${sel.size>1?"s":""}` : " · all departments");
+}
+
 async function init() {
   try {
-    const rows = await fetchAllRows();
-    if (!rows.length) { document.getElementById("status").textContent = "No data yet."; return; }
-    DATA = aggregate(rows);
-    fillStatus(rows);
+    const lightRows = await fetchAllLight();
+    if (!lightRows.length) { document.getElementById("status").textContent = "No data yet."; return; }
+    DATA = aggregate(lightRows);
+    fillStatus(lightRows);
     drawChart();
+
+    const latest = DATA.dates[DATA.dates.length - 1];
+    const latestJobRows = await fetchLatestJobs(latest);
+    TABLE_JOBS = buildTableJobs(latestJobRows);
+    renderDeptFilter();
+    renderTable();
+
     document.getElementById("status").style.display = "none";
     document.getElementById("content").style.display = "block";
     document.getElementById("mode").addEventListener("change", e => { MODE = e.target.value; drawChart(); });
   } catch (err) {
-    document.getElementById("status").innerHTML =
-      `<span class="err">Error loading data: ${err.message}</span>`;
+    document.getElementById("status").innerHTML = `<span class="err">Error loading data: ${err.message}</span>`;
     console.error(err);
   }
 }
