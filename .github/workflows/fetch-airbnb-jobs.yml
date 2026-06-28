@@ -2,7 +2,7 @@ name: Fetch Airbnb Jobs
 
 on:
   schedule:
-    - cron: "0 9 * * 1"    # Mondays at 09:00 UTC
+    - cron: "0 9 * * *"    # Daily at 09:00 UTC
   workflow_dispatch:         # lets you run it by hand from the Actions tab
 
 jobs:
