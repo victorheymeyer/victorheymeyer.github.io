@@ -120,7 +120,7 @@ function aggregate(rows) {
 
     if (!locByDate.has(d)) locByDate.set(d, new Map());
     const lm = locByDate.get(d);
-    const loc = r.location_name || "(none)";
+    const loc = (r.location_name || "(none)").trim().replace(/\s+/g, " ");
     lm.set(loc, (lm.get(loc) || 0) + 1);
   }
   const dates = [...totalByDate.keys()].sort();
