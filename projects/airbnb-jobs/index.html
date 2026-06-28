@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Airbnb Jobs Tracker</title>
+<style>
+  :root { --ink:#222; --muted:#777; --line:#e4e4e4; --bg:#fafafa; --accent:#ff5a5f; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); margin: 0; padding: 24px;
+         max-width: 900px; margin-inline: auto; line-height: 1.5; }
+  h1 { margin: 0 0 4px; font-size: 1.5rem; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 0.9rem; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr));
+           gap: 12px; margin-bottom: 28px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card .num { font-size: 1.8rem; font-weight: 600; }
+  .card .lbl { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: .03em; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:20px; }
+  .panel h2 { font-size: 1rem; margin: 0 0 12px; }
+  .row { display:flex; flex-wrap:wrap; gap:24px; }
+  .row > div { flex:1; min-width: 220px; }
+  ul.mini { list-style:none; padding:0; margin:0; font-size:0.9rem; }
+  ul.mini li { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px dashed var(--line); }
+  ul.mini li span:last-child { color: var(--muted); }
+  select { font-size:0.9rem; padding:4px 8px; border:1px solid var(--line); border-radius:6px; }
+  canvas { width:100%; height:auto; }
+  #status { color: var(--muted); font-size:0.9rem; }
+  .err { color: var(--accent); }
+  .legend { display:flex; flex-wrap:wrap; gap:12px; font-size:0.8rem; margin-top:10px; }
+  .legend span { display:inline-flex; align-items:center; gap:5px; }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  footer { color: var(--muted); font-size:0.8rem; margin-top:28px; }
+</style>
+</head>
+<body>
+  <h1>Airbnb Jobs Tracker</h1>
+  <p class="sub">Daily snapshots of Airbnb's public job board. Having fun, learning, just trying stuff out.</p>
+
+  <div id="status">Loading…</div>
+
+  <div id="content" style="display:none;">
+    <div class="cards">
+      <div class="card"><div class="num" id="c-open">–</div><div class="lbl">Open roles (latest)</div></div>
+      <div class="card"><div class="num" id="c-snaps">–</div><div class="lbl">Snapshots stored</div></div>
+      <div class="card"><div class="num" id="c-depts">–</div><div class="lbl">Departments</div></div>
+      <div class="card"><div class="num" id="c-locs">–</div><div class="lbl">Locations</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Openings over time
+        &nbsp;<select id="mode">
+          <option value="total">Total</option>
+          <option value="dept">By department (top 8)</option>
+          <option value="loc">By location (top 8)</option>
+        </select>
+      </h2>
+      <canvas id="chart" width="860" height="360"></canvas>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Latest snapshot breakdown</h2>
+      <div class="row">
+        <div><strong>Top departments</strong><ul class="mini" id="top-depts"></ul></div>
+        <div><strong>Top locations</strong><ul class="mini" id="top-locs"></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <footer id="foot"></footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = "https://zqdvrgtahhejxqjtlbmq.supabase.co";
+const SUPABASE_ANON_KEY = "PASTE_YOUR_ANON_PUBLIC_KEY_HERE";
+
+// CDN sets a global called `supabase`; name our client differently to avoid the collision.
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const PALETTE = ["#ff5a5f","#0077b6","#2a9d8f","#e9c46a","#9b5de5","#f15bb5","#00bbf9","#8d99ae"];
+let DATA = null;       // aggregated structure
+let MODE = "total";
+
+async function fetchAllRows() {
+  // Paginate: Supabase silently caps responses at 1000 rows.
+  const pageSize = 1000;
+  let from = 0, all = [];
+  while (true) {
+    const { data, error } = await supabaseClient
+      .from("raw_airbnb_jobs")
+      .select("snapshot_date, location_name, departments")
+      .order("snapshot_date", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    all = all.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
+function aggregate(rows) {
+  const totalByDate = new Map();
+  const deptByDate = new Map();   // date -> Map(dept -> count)
+  const locByDate = new Map();    // date -> Map(loc  -> count)
+  for (const r of rows) {
+    const d = r.snapshot_date;
+    totalByDate.set(d, (totalByDate.get(d) || 0) + 1);
+
+    if (!deptByDate.has(d)) deptByDate.set(d, new Map());
+    const dm = deptByDate.get(d);
+    const depts = r.departments || [];
+    if (depts.length === 0) dm.set("(none)", (dm.get("(none)") || 0) + 1);
+    else for (const dep of depts) {
+      const n = dep.name || "(unknown)";
+      dm.set(n, (dm.get(n) || 0) + 1);
+    }
+
+    if (!locByDate.has(d)) locByDate.set(d, new Map());
+    const lm = locByDate.get(d);
+    const loc = r.location_name || "(none)";
+    lm.set(loc, (lm.get(loc) || 0) + 1);
+  }
+  const dates = [...totalByDate.keys()].sort();
+  return { dates, totalByDate, deptByDate, locByDate };
+}
+
+// Pick the top-N series names by their count in the latest snapshot.
+function topSeries(byDate, latestDate, n) {
+  const latest = byDate.get(latestDate) || new Map();
+  return [...latest.entries()].sort((a,b) => b[1]-a[1]).slice(0, n).map(e => e[0]);
+}
+
+function buildSeries() {
+  const { dates, totalByDate, deptByDate, locByDate } = DATA;
+  const latest = dates[dates.length - 1];
+  if (MODE === "total") {
+    return [{ label:"All open roles", color:PALETTE[0],
+              values: dates.map(d => totalByDate.get(d) || 0) }];
+  }
+  const byDate = MODE === "dept" ? deptByDate : locByDate;
+  const names = topSeries(byDate, latest, 8);
+  return names.map((name, i) => ({
+    label: name, color: PALETTE[i % PALETTE.length],
+    values: dates.map(d => (byDate.get(d)?.get(name)) || 0)
+  }));
+}
+
+function drawChart() {
+  const series = buildSeries();
+  const dates = DATA.dates;
+  const cv = document.getElementById("chart");
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.width, H = cv.height;
+  cv.width = W * dpr; cv.height = H * dpr;
+  cv.style.height = (H) + "px";
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0,0,W,H);
+
+  const padL=46, padR=16, padT=14, padB=34;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  let maxV = 0;
+  for (const s of series) for (const v of s.values) if (v > maxV) maxV = v;
+  maxV = Math.max(maxV, 1) * 1.1;
+
+  // axes + horizontal gridlines
+  ctx.strokeStyle = "#eee"; ctx.fillStyle = "#999"; ctx.font = "11px sans-serif";
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  const ticks = 4;
+  for (let i=0; i<=ticks; i++) {
+    const val = Math.round(maxV * i/ticks);
+    const y = padT + plotH - (val/maxV)*plotH;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W-padR, y); ctx.stroke();
+    ctx.fillText(val, padL-6, y);
+  }
+  // x labels
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  const xFor = i => dates.length === 1 ? padL + plotW/2
+                   : padL + (i/(dates.length-1))*plotW;
+  dates.forEach((d,i) => {
+    if (dates.length > 10 && i % Math.ceil(dates.length/10) !== 0) return;
+    ctx.fillText(d.slice(5), xFor(i), padT+plotH+6);  // MM-DD
+  });
+
+  // series lines
+  for (const s of series) {
+    ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = 2;
+    ctx.beginPath();
+    s.values.forEach((v,i) => {
+      const x = xFor(i), y = padT + plotH - (v/maxV)*plotH;
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    s.values.forEach((v,i) => {
+      const x = xFor(i), y = padT + plotH - (v/maxV)*plotH;
+      ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
+    });
+  }
+
+  // legend (skip for single total line)
+  const leg = document.getElementById("legend");
+  leg.innerHTML = MODE === "total" ? "" :
+    series.map(s => `<span><span class="dot" style="background:${s.color}"></span>${s.label}</span>`).join("");
+}
+
+function fillStatus(rows) {
+  const { dates, totalByDate, deptByDate, locByDate } = DATA;
+  const latest = dates[dates.length - 1];
+  document.getElementById("c-open").textContent  = totalByDate.get(latest);
+  document.getElementById("c-snaps").textContent = dates.length;
+  document.getElementById("c-depts").textContent = (deptByDate.get(latest) || new Map()).size;
+  document.getElementById("c-locs").textContent  = (locByDate.get(latest) || new Map()).size;
+
+  const list = (map, id) => {
+    const top = [...map.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8);
+    document.getElementById(id).innerHTML =
+      top.map(([k,v]) => `<li><span>${k}</span><span>${v}</span></li>`).join("");
+  };
+  list(deptByDate.get(latest) || new Map(), "top-depts");
+  list(locByDate.get(latest) || new Map(), "top-locs");
+
+  document.getElementById("foot").textContent =
+    `Snapshots ${dates[0]} → ${latest} · ${rows.length} total rows · data from Airbnb's public Greenhouse board`;
+}
+
+async function init() {
+  try {
+    const rows = await fetchAllRows();
+    if (!rows.length) { document.getElementById("status").textContent = "No data yet."; return; }
+    DATA = aggregate(rows);
+    fillStatus(rows);
+    drawChart();
+    document.getElementById("status").style.display = "none";
+    document.getElementById("content").style.display = "block";
+    document.getElementById("mode").addEventListener("change", e => { MODE = e.target.value; drawChart(); });
+  } catch (err) {
+    document.getElementById("status").innerHTML =
+      `<span class="err">Error loading data: ${err.message}</span>`;
+    console.error(err);
+  }
+}
+init();
+</script>
+</body>
+</html>
