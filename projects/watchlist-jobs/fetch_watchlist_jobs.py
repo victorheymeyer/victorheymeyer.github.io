@@ -93,6 +93,10 @@ def main():
     print("Writing job dimension...")
     upsert_chunked("job_content", dim_rows, "watchlist_company,ats_id")
 
+    print("Refreshing freshness columns...")
+    sb.rpc("refresh_job_freshness", {"run_date": snapshot_date}).execute()
+    print("  refresh_job_freshness done")
+
     fact_count = sb.table("raw_watchlist_jobs").select("ats_id", count="exact") \
         .eq("snapshot_date", snapshot_date).limit(1).execute().count
     dim_count = sb.table("job_content").select("ats_id", count="exact").limit(1).execute().count
