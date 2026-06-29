@@ -1,4 +1,5 @@
 # projects/watchlist-jobs/fetch_watchlist_jobs.py
+import hashlib
 import os
 import sys
 from datetime import datetime, timezone
@@ -21,7 +22,8 @@ snapshot_date = datetime.now(timezone.utc).date().isoformat()
 
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title", "location",
              "is_remote", "department", "team", "employment_type", "salary_min", "salary_max",
-             "salary_currency", "posted_at", "fetched_at", "url", "apply_url", "raw"]
+             "salary_currency", "posted_at", "fetched_at", "url", "apply_url", "raw",
+             "description_hash"]
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
             "url", "apply_url", "last_seen", "fetched_at"]
 
@@ -40,6 +42,8 @@ def main():
                 d["watchlist_company"] = company
                 d["ats_id"] = str(d.get("ats_id"))
                 d["last_seen"] = snapshot_date
+                desc = d.get("description")
+                d["description_hash"] = hashlib.sha256(desc.encode("utf-8")).hexdigest() if desc else None
                 fact_rows.append({k: d.get(k) for k in FACT_COLS})
                 dim_rows.append({k: d.get(k) for k in DIM_COLS})
             print(f"OK   {company:12s} ({ats}/{slug}): {len(jobs)} jobs")
