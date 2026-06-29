@@ -1,0 +1,25 @@
+name: Watchlist Jobs Daily
+
+on:
+  schedule:
+    - cron: "0 9 * * *"   # daily at 09:00 UTC
+  workflow_dispatch:        # lets you run it manually from the Actions tab
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r projects/watchlist-jobs/requirements.txt
+
+      - name: Run loader
+        env:
+          JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
+          JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
+        run: python projects/watchlist-jobs/fetch_watchlist_jobs.py
