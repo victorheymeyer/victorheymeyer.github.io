@@ -12,10 +12,28 @@ SUPABASE_SERVICE_KEY = os.environ["JOBS_SUPABASE_SERVICE_KEY"]
 sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 WATCHLIST = [
-    {"company": "databricks", "ats": "greenhouse", "slug": "databricks"},
-    {"company": "rubrik",     "ats": "greenhouse", "slug": "rubrik"},
-    {"company": "snowflake",  "ats": "ashby",      "slug": "snowflake"},
+    {"company": "databricks",    "ats": "greenhouse", "slug": "databricks"},
+    {"company": "rubrik",        "ats": "greenhouse", "slug": "rubrik"},
+    {"company": "snowflake",     "ats": "ashby",      "slug": "snowflake"},
+    {"company": "airbnb",        "ats": "greenhouse", "slug": "airbnb"},
+    {"company": "spacex",        "ats": "greenhouse", "slug": "spacex"},
+    {"company": "spacexglobal",  "ats": "greenhouse", "slug": "spacexglobal"},
+    {"company": "stripe",        "ats": "greenhouse", "slug": "stripe"},
+    {"company": "instacart",     "ats": "greenhouse", "slug": "instacart"},
+    {"company": "anthropic",     "ats": "greenhouse", "slug": "anthropic"},
+    {"company": "deepmind",      "ats": "greenhouse", "slug": "deepmind"},
+    {"company": "brex",          "ats": "greenhouse", "slug": "brex"},
+    {"company": "asana",         "ats": "greenhouse", "slug": "asana"},
+    {"company": "hubspot",       "ats": "greenhouse", "slug": "hubspotjobs"},
+    {"company": "okta",          "ats": "greenhouse", "slug": "okta"},
+    {"company": "sofi",          "ats": "greenhouse", "slug": "sofi"},
+    {"company": "airtable",      "ats": "greenhouse", "slug": "airtable"},
+    {"company": "coursera",      "ats": "greenhouse", "slug": "coursera"},
+    {"company": "lendingtree",   "ats": "greenhouse", "slug": "lendingtree"},
+    {"company": "coreweave",     "ats": "greenhouse", "slug": "coreweave"},
+    {"company": "togetherai",    "ats": "greenhouse", "slug": "togetherai"},
 ]
+
 SCRAPERS = {"greenhouse": GreenhouseScraper, "ashby": AshbyScraper}
 
 snapshot_date = datetime.now(timezone.utc).date().isoformat()
