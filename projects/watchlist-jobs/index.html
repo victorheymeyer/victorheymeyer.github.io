@@ -64,6 +64,8 @@
   td a:hover { text-decoration: underline; }
   .detail td { background: var(--panel-2); }
   .detail .meta { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .detail .metaline { margin-bottom: 3px; }
+  .detail .meta .lbl { color: #93c5fd; font-weight: 700; }
   .detail .desc { white-space: pre-wrap; font-size: 13px; max-height: 420px; overflow: auto; }
 
   .pager { display: flex; gap: 10px; align-items: center; margin-top: 14px; color: var(--muted); font-size: 13px; }
@@ -433,14 +435,32 @@ async function appendDetail(tbody, key, r) {
   tr.className = "detail";
   const td = document.createElement("td");
   td.colSpan = 5;
-  const meta = [
-    r.department ? "Dept: " + r.department : "",
-    r.employment_type || "",
-    fmtSalary(r),
-    r.posted_at ? "Posted: " + fmtDate(r.posted_at) : "",
-    "First in this snapshot: " + fmtDate(r.snapshot_date)
-  ].filter(Boolean).join("  |  ");
-  td.innerHTML = '<div class="meta">' + esc(meta) + '</div><div class="desc" id="desc_' + cssId(key) + '">Loading description...</div>';
+
+  const dept = r.department ? esc(r.department) : "TBD";
+  const posted = r.posted_at ? fmtDate(r.posted_at) : "TBD";
+  const lastSeen = fmtDate(r.snapshot_date);
+  const ats = r.ats_type ? esc(r.ats_type) : "TBD";
+  const atsId = esc(r.ats_id || "");
+
+  let salaryStr = "TBD";
+  if (r.salary_min != null || r.salary_max != null) {
+    const cur = r.salary_currency ? esc(r.salary_currency) + " " : "";
+    const mn = r.salary_min != null ? Number(r.salary_min).toLocaleString() : "?";
+    const mx = r.salary_max != null ? Number(r.salary_max).toLocaleString() : "?";
+    salaryStr = cur + mn + " - " + mx;
+  }
+
+  const meta =
+    '<div class="metaline"><span class="lbl">Job Info:</span> Dept: ' + dept +
+      ' | Function (AI): TBD | Salary Range (All locations): ' + salaryStr +
+      ' | Internal Job ID/Req: TBD</div>' +
+    '<div class="metaline"><span class="lbl">Dates:</span> First Posted (ATS.ID): ' + posted +
+      ' | Last Seen: ' + lastSeen +
+      ' | Last Revised (Description): TBD</div>' +
+    '<div class="metaline"><span class="lbl">ATS:</span> ' + ats +
+      ' | ATS Job ID: ' + atsId + '</div>';
+
+  td.innerHTML = '<div class="meta">' + meta + '</div><div class="desc" id="desc_' + cssId(key) + '">Loading description...</div>';
   tr.appendChild(td);
   tbody.appendChild(tr);
 
