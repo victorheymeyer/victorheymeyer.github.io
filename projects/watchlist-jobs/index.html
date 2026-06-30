@@ -91,17 +91,6 @@
 
   <div class="cards" id="cards"></div>
 
-  <div class="panel" id="freshnessPanel" style="display:none">
-    <h2>Freshness signals</h2>
-    <p class="hint" id="freshnessHint"></p>
-  </div>
-
-  <div class="panel" id="chartPanel" style="display:none">
-    <h2>Openings by company</h2>
-    <p class="hint">Click a bar to filter the list below to that company.</p>
-    <div id="chartWrap"><canvas id="chart"></canvas></div>
-  </div>
-
   <div class="panel" id="listPanel" style="display:none">
     <div class="controls">
       <input type="text" id="search" placeholder="Search title, company, or location">
@@ -118,6 +107,17 @@
       <tbody id="tbody"></tbody>
     </table>
     <div class="pager" id="pager"></div>
+  </div>
+
+  <div class="panel" id="chartPanel" style="display:none">
+    <h2>Openings by company</h2>
+    <p class="hint">Click a bar to filter the list above to that company.</p>
+    <div id="chartWrap"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="panel" id="freshnessPanel" style="display:none">
+    <h2>Freshness signals</h2>
+    <p class="hint" id="freshnessHint"></p>
   </div>
 
   <div class="loading" id="loading">Connecting to Supabase...</div>
