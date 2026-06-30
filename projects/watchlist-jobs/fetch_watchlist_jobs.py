@@ -13,29 +13,6 @@ SUPABASE_URL = os.environ["JOBS_SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["JOBS_SUPABASE_SERVICE_KEY"]
 sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-WATCHLIST = [
-    {"company": "databricks",    "ats": "greenhouse", "slug": "databricks"},
-    {"company": "rubrik",        "ats": "greenhouse", "slug": "rubrik"},
-    {"company": "snowflake",     "ats": "ashby",      "slug": "snowflake"},
-    {"company": "airbnb",        "ats": "greenhouse", "slug": "airbnb"},
-    {"company": "spacex",        "ats": "greenhouse", "slug": "spacex"},
-    {"company": "spacexglobal",  "ats": "greenhouse", "slug": "spacexglobal"},
-    {"company": "stripe",        "ats": "greenhouse", "slug": "stripe"},
-    {"company": "instacart",     "ats": "greenhouse", "slug": "instacart"},
-    {"company": "anthropic",     "ats": "greenhouse", "slug": "anthropic"},
-    {"company": "deepmind",      "ats": "greenhouse", "slug": "deepmind"},
-    {"company": "brex",          "ats": "greenhouse", "slug": "brex"},
-    {"company": "asana",         "ats": "greenhouse", "slug": "asana"},
-    {"company": "hubspot",       "ats": "greenhouse", "slug": "hubspotjobs"},
-    {"company": "okta",          "ats": "greenhouse", "slug": "okta"},
-    {"company": "sofi",          "ats": "greenhouse", "slug": "sofi"},
-    {"company": "airtable",      "ats": "greenhouse", "slug": "airtable"},
-    {"company": "coursera",      "ats": "greenhouse", "slug": "coursera"},
-    {"company": "lendingtree",   "ats": "greenhouse", "slug": "lendingtree"},
-    {"company": "coreweave",     "ats": "greenhouse", "slug": "coreweave"},
-    {"company": "togetherai",    "ats": "greenhouse", "slug": "togetherai"},
-]
-
 SCRAPERS = {"greenhouse": GreenhouseScraper, "ashby": AshbyScraper}
 
 # --- HTML description capture -------------------------------------------------
@@ -90,14 +67,40 @@ DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "d
             "url", "apply_url", "last_seen", "fetched_at"]
 
 
+def load_watchlist():
+    """Read active companies from the watchlist_companies table."""
+    resp = sb.table("watchlist_companies") \
+        .select("company,ats,slug") \
+        .eq("active", True) \
+        .order("priority") \
+        .execute()
+    rows = resp.data or []
+    watchlist = [
+        {"company": r["company"], "ats": (r["ats"] or "").lower(), "slug": r["slug"]}
+        for r in rows
+    ]
+    if not watchlist:
+        print("ERROR: watchlist read returned 0 active companies; aborting "
+              "(check the watchlist_companies table and DB connectivity).")
+        sys.exit(1)
+    return watchlist
+
+
 def main():
+    watchlist = load_watchlist()
+    print(f"Loaded {len(watchlist)} active companies from watchlist_companies")
+
     fact_rows, dim_rows = [], []
     failures = []
 
     http = httpx.Client(timeout=30, follow_redirects=True)
     try:
-        for entry in WATCHLIST:
+        for entry in watchlist:
             company, ats, slug = entry["company"], entry["ats"], entry["slug"]
+            if ats not in SCRAPERS:
+                print(f"SKIP {company:12s}: unknown ats '{ats}' (no scraper)")
+                failures.append(company)
+                continue
             try:
                 jobs = SCRAPERS[ats](slug).fetch()
 
