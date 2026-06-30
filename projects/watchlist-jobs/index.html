@@ -66,7 +66,8 @@
   .detail .meta { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
   .detail .metaline { margin-bottom: 3px; }
   .detail .meta .lbl { color: #93c5fd; font-weight: 700; }
-  .detail .desc { font-size: 13px; max-height: 420px; overflow: auto; }
+  .detail .desc { color: var(--text); background: #0e1119; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; font-size: 13px; max-height: 420px; overflow: auto; }
+  .detail .desc * { color: inherit; }
   .detail .desc p { margin: 0 0 10px; }
   .detail .desc ul, .detail .desc ol { margin: 0 0 10px; padding-left: 20px; }
   .detail .desc li { margin-bottom: 4px; }
@@ -180,7 +181,8 @@ function renderDescription(html) {
   if (!html) return "";
   // decide whether this is real HTML or plain text (a bare "<500" is not a tag)
   const looksHtml = /<\/?(p|br|div|ul|ol|li|strong|b|em|i|span|h[1-6]|a|table|tr|td)\b/i.test(html);
-  const safe = DOMPurify.sanitize(looksHtml ? html : plainTextToHtml(html), { USE_PROFILES: { html: true } });
+  const safe = DOMPurify.sanitize(looksHtml ? html : plainTextToHtml(html),
+    { USE_PROFILES: { html: true }, FORBID_ATTR: ["style"], FORBID_TAGS: ["font"] });
   return stripLeadingReqCode(safe);
 }
 
