@@ -173,17 +173,38 @@ async function fetchAllRows(table, selectCols, applyFilters) {
   return all;
 }
 
-// Display-time render: strip the leading requisition code, then sanitize the
-// original HTML so real formatting (paragraphs, lists, bold) is preserved safely.
-// Written general (not tied to current code formats). Storage stays raw.
+// Display-time render: strip the leading requisition code, then render to safe HTML.
+// Handles both cases in the data: real HTML (Greenhouse) and plain text with
+// newlines/bullets (Ashby). General, not tied to current formats. Storage stays raw.
 function renderDescription(html) {
   if (!html) return "";
   let s = html;
   // remove a leading requisition code (uppercase token containing a digit),
   // allowing for leading opening tags and whitespace/&nbsp; before the real text
   s = s.replace(/^(\s*(?:<[^>]+>\s*)*)[A-Z][A-Z0-9-]*\d[A-Z0-9-]*(?:&nbsp;|\s)*/, "$1");
+  // decide whether this is real HTML or plain text (a bare "<500" is not a tag)
+  const looksHtml = /<\/?(p|br|div|ul|ol|li|strong|b|em|i|span|h[1-6]|a|table|tr|td)\b/i.test(s);
+  const out = looksHtml ? s : plainTextToHtml(s);
   // sanitize before it ever touches the DOM
-  return DOMPurify.sanitize(s, { USE_PROFILES: { html: true } });
+  return DOMPurify.sanitize(out, { USE_PROFILES: { html: true } });
+}
+
+// Turn plain text into paragraphs and bullet lists. Double newlines split blocks,
+// single newlines become line breaks, and lines starting with - / • / * become list items.
+function plainTextToHtml(text) {
+  const blocks = text.split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+  let html = "", inList = false;
+  for (const b of blocks) {
+    if (/^[-•*]\s+/.test(b)) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += "<li>" + esc(b.replace(/^[-•*]\s+/, "")).replace(/\n/g, "<br>") + "</li>";
+    } else {
+      if (inList) { html += "</ul>"; inList = false; }
+      html += "<p>" + esc(b).replace(/\n/g, "<br>") + "</p>";
+    }
+  }
+  if (inList) html += "</ul>";
+  return html;
 }
 
 function fmtDate(d) {

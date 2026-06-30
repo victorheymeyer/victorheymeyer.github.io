@@ -1,9 +1,11 @@
 # projects/watchlist-jobs/fetch_watchlist_jobs.py
 import hashlib
+import html as html_mod
 import os
 import sys
 from datetime import datetime, timezone
 
+import httpx
 from jobhive.scrapers import GreenhouseScraper, AshbyScraper
 from supabase import create_client
 
@@ -36,6 +38,48 @@ WATCHLIST = [
 
 SCRAPERS = {"greenhouse": GreenhouseScraper, "ashby": AshbyScraper}
 
+# --- HTML description capture -------------------------------------------------
+# jobhive flattens descriptions to plain text (Greenhouse: strips all tags;
+# Ashby: picks descriptionPlain), destroying paragraph/bullet structure before
+# we ever see it. To get renderable HTML we re-fetch the SAME public, no-auth
+# endpoints jobhive uses and pull the HTML field directly, keyed by ats_id.
+#
+# Each extractor returns {str(ats_id): html_string}. To support a new ATS later,
+# add one extractor and register it below. Any ATS without an extractor simply
+# keeps jobhive's plain text (graceful fallback, nothing breaks).
+
+def _greenhouse_html_map(slug, client):
+    url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
+    resp = client.get(url)
+    resp.raise_for_status()
+    out = {}
+    for job in resp.json().get("jobs", []):
+        content = job.get("content")
+        if isinstance(content, str) and content.strip():
+            # Greenhouse sends entity-escaped HTML; one unescape pass yields
+            # real tags. Do NOT strip tags and do NOT unescape twice.
+            out[str(job["id"])] = html_mod.unescape(content)
+    return out
+
+
+def _ashby_html_map(slug, client):
+    url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true"
+    resp = client.get(url)
+    resp.raise_for_status()
+    out = {}
+    for job in resp.json().get("jobs", []):
+        desc_html = job.get("descriptionHtml")
+        if isinstance(desc_html, str) and desc_html.strip():
+            out[str(job["id"])] = desc_html  # already clean HTML, no unescape
+    return out
+
+
+HTML_EXTRACTORS = {
+    "greenhouse": _greenhouse_html_map,
+    "ashby": _ashby_html_map,
+}
+# -----------------------------------------------------------------------------
+
 snapshot_date = datetime.now(timezone.utc).date().isoformat()
 
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title", "location",
@@ -50,24 +94,53 @@ def main():
     fact_rows, dim_rows = [], []
     failures = []
 
-    for entry in WATCHLIST:
-        company, ats, slug = entry["company"], entry["ats"], entry["slug"]
-        try:
-            jobs = SCRAPERS[ats](slug).fetch()
-            for j in jobs:
-                d = j.model_dump(mode="json")
-                d["snapshot_date"] = snapshot_date
-                d["watchlist_company"] = company
-                d["ats_id"] = str(d.get("ats_id"))
-                d["last_seen"] = snapshot_date
-                desc = d.get("description")
-                d["description_hash"] = hashlib.sha256(desc.encode("utf-8")).hexdigest() if desc else None
-                fact_rows.append({k: d.get(k) for k in FACT_COLS})
-                dim_rows.append({k: d.get(k) for k in DIM_COLS})
-            print(f"OK   {company:12s} ({ats}/{slug}): {len(jobs)} jobs")
-        except Exception as e:
-            print(f"FAIL {company:12s} ({ats}/{slug}): {type(e).__name__}: {e}")
-            failures.append(company)
+    http = httpx.Client(timeout=30, follow_redirects=True)
+    try:
+        for entry in WATCHLIST:
+            company, ats, slug = entry["company"], entry["ats"], entry["slug"]
+            try:
+                jobs = SCRAPERS[ats](slug).fetch()
+
+                # Supplement with real HTML descriptions where we have an
+                # extractor for this ATS. Failure here is non-fatal: we fall
+                # back to jobhive's plain text for this company.
+                html_map = {}
+                extractor = HTML_EXTRACTORS.get(ats)
+                if extractor:
+                    try:
+                        html_map = extractor(slug, http)
+                    except Exception as e:
+                        print(f"WARN {company:12s} HTML fetch failed "
+                              f"({type(e).__name__}: {e}); using plain text")
+
+                for j in jobs:
+                    d = j.model_dump(mode="json")
+                    d["snapshot_date"] = snapshot_date
+                    d["watchlist_company"] = company
+                    d["ats_id"] = str(d.get("ats_id"))
+                    d["last_seen"] = snapshot_date
+
+                    # Hash the PLAIN text (stable change-detection signal,
+                    # noise-resistant to HTML re-serialization, zero churn).
+                    plain = d.get("description")
+                    d["description_hash"] = (
+                        hashlib.sha256(plain.encode("utf-8")).hexdigest() if plain else None
+                    )
+
+                    # Store HTML for display; fall back to plain text if we
+                    # didn't get HTML for this job.
+                    d["description"] = html_map.get(d["ats_id"]) or plain
+
+                    fact_rows.append({k: d.get(k) for k in FACT_COLS})
+                    dim_rows.append({k: d.get(k) for k in DIM_COLS})
+
+                print(f"OK   {company:12s} ({ats}/{slug}): {len(jobs)} jobs, "
+                      f"{len(html_map)} html")
+            except Exception as e:
+                print(f"FAIL {company:12s} ({ats}/{slug}): {type(e).__name__}: {e}")
+                failures.append(company)
+    finally:
+        http.close()
 
     def dedupe(rows, keys):
         seen = {}
