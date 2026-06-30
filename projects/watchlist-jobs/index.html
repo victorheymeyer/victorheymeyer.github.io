@@ -106,7 +106,7 @@
     <div id="count" class="hint"></div>
     <table>
       <thead>
-        <tr><th style="width:140px">Company</th><th>Title</th><th style="width:240px">Location</th><th style="width:80px">Link</th></tr>
+        <tr><th style="width:140px">Company</th><th>Title</th><th style="width:200px">Location</th><th style="width:90px">Days old</th><th style="width:70px">Link</th></tr>
       </thead>
       <tbody id="tbody"></tbody>
     </table>
@@ -188,6 +188,16 @@ function fmtDate(d) {
   const dt = new Date(d);
   if (isNaN(dt)) return d;
   return dt.toISOString().slice(0, 10);
+}
+
+// Days since posted_at (the source's claim). Returns null when posted_at is absent or unparseable.
+function daysOld(posted) {
+  if (!posted) return null;
+  const d = new Date(posted);
+  if (isNaN(d)) return null;
+  const ms = Date.now() - d.getTime();
+  if (ms < 0) return 0;
+  return Math.floor(ms / 86400000);
 }
 
 function fmtSalary(r) {
@@ -353,6 +363,13 @@ function applyFilters() {
 
 function renderTable() {
   const filtered = applyFilters();
+  filtered.sort((a, b) => {
+    const da = daysOld(a.posted_at), db = daysOld(b.posted_at);
+    if (da == null && db == null) return 0;
+    if (da == null) return 1;
+    if (db == null) return -1;
+    return da - db;
+  });
   const total = filtered.length;
   const pages = Math.max(1, Math.ceil(total / state.pageSize));
   if (state.page > pages) state.page = pages;
@@ -371,12 +388,14 @@ function renderTable() {
     const badges =
       (r.maybe_wa ? '<span class="badge wa">WA</span>' : "") +
       (r.maybe_remote_us ? '<span class="badge rem">Remote</span>' : "");
+    const dOld = daysOld(r.posted_at);
     const tr = document.createElement("tr");
     tr.className = "jobrow";
     tr.innerHTML =
       '<td class="company">' + esc(r.watchlist_company) + '</td>' +
       '<td>' + esc(r.title || "(no title)") + badges + '</td>' +
       '<td class="loc">' + esc(r.location || "") + '</td>' +
+      '<td class="loc">' + (dOld == null ? "-" : dOld) + '</td>' +
       '<td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
     tr.onclick = () => toggleRow(key, r, tr);
     tbody.appendChild(tr);
@@ -413,7 +432,7 @@ async function appendDetail(tbody, key, r) {
   const tr = document.createElement("tr");
   tr.className = "detail";
   const td = document.createElement("td");
-  td.colSpan = 4;
+  td.colSpan = 5;
   const meta = [
     r.department ? "Dept: " + r.department : "",
     r.employment_type || "",
