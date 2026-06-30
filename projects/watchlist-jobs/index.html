@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Watchlist</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212b;
+    --border: #2a2f3a;
+    --text: #e6e8ec;
+    --muted: #9aa3b2;
+    --accent: #4f9cff;
+    --accent-soft: #1f3550;
+    --good: #3fb950;
+    --warn: #d29922;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 18px 60px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 22px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card .n { font-size: 26px; font-weight: 600; }
+  .card .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 18px; }
+  .panel h2 { font-size: 14px; margin: 0 0 4px; }
+  .panel .hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+
+  #chartWrap { width: 100%; overflow-x: auto; }
+  canvas { display: block; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .controls input[type="text"], .controls select {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  }
+  .controls input[type="text"] { min-width: 240px; flex: 1; }
+  .chk { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .clearbtn { background: var(--accent-soft); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
+  .clearbtn:hover { border-color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  tr.jobrow { cursor: pointer; }
+  tr.jobrow:hover td { background: var(--panel-2); }
+  .company { color: var(--accent); font-weight: 600; }
+  .loc { color: var(--muted); }
+  .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 6px; margin-left: 6px; border: 1px solid var(--border); color: var(--muted); }
+  .badge.wa { color: var(--good); border-color: #244d2c; }
+  .badge.rem { color: var(--accent); border-color: var(--accent-soft); }
+  td a { color: var(--accent); text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  .detail td { background: var(--panel-2); }
+  .detail .meta { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .detail .desc { white-space: pre-wrap; font-size: 13px; max-height: 420px; overflow: auto; }
+
+  .pager { display: flex; gap: 10px; align-items: center; margin-top: 14px; color: var(--muted); font-size: 13px; }
+  .pager button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  .pager button:disabled { opacity: .4; cursor: default; }
+
+  .err { background: #3a1d1d; border: 1px solid #5c2b2b; color: #ffb4b4; border-radius: 10px; padding: 14px 16px; margin-bottom: 18px; }
+  .err code { background: rgba(0,0,0,.3); padding: 1px 5px; border-radius: 4px; }
+  .loading { color: var(--muted); padding: 20px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Job Watchlist</h1>
+  <div class="sub" id="sub">Loading the latest snapshot...</div>
+
+  <div id="errBox"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel" id="freshnessPanel" style="display:none">
+    <h2>Freshness signals</h2>
+    <p class="hint" id="freshnessHint"></p>
+  </div>
+
+  <div class="panel" id="chartPanel" style="display:none">
+    <h2>Openings by company</h2>
+    <p class="hint">Click a bar to filter the list below to that company.</p>
+    <div id="chartWrap"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="panel" id="listPanel" style="display:none">
+    <div class="controls">
+      <input type="text" id="search" placeholder="Search title, company, or location">
+      <select id="companySel"><option value="">All companies</option></select>
+      <label class="chk"><input type="checkbox" id="waChk"> WA candidates</label>
+      <label class="chk"><input type="checkbox" id="remChk"> Remote-US candidates</label>
+      <button class="clearbtn" id="clearBtn">Clear</button>
+    </div>
+    <div id="count" class="hint"></div>
+    <table>
+      <thead>
+        <tr><th style="width:140px">Company</th><th>Title</th><th style="width:240px">Location</th><th style="width:80px">Link</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="pager" id="pager"></div>
+  </div>
+
+  <div class="loading" id="loading">Connecting to Supabase...</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+const LIST_COLUMNS = [
+  "snapshot_date","watchlist_company","ats_id","ats_type","title","location",
+  "department","employment_type","salary_min","salary_max","salary_currency",
+  "posted_at","url","apply_url","maybe_wa","maybe_remote_us"
+].join(",");
+
+const state = {
+  rows: [],
+  snapshotDate: null,
+  earliestDate: null,
+  dayCount: 0,
+  descCache: {},
+  filters: { company: "", wa: false, remote: false, search: "" },
+  page: 1,
+  pageSize: 50,
+  expanded: null
+};
+
+// ---- Helpers ----
+function showError(msg) {
+  document.getElementById("errBox").innerHTML =
+    '<div class="err"><strong>Could not load data.</strong><br>' + msg +
+    '<br><br>If this is a permissions error, remember both the RLS <code>select</code> policy for <code>anon</code> AND the table <code>GRANT</code> are needed for reads.</div>';
+}
+
+async function fetchAllRows(table, selectCols, applyFilters) {
+  const pageSize = 1000;
+  let from = 0;
+  let all = [];
+  while (true) {
+    let q = supabaseClient.from(table).select(selectCols).range(from, from + pageSize - 1);
+    if (applyFilters) q = applyFilters(q);
+    const { data, error } = await q;
+    if (error) throw error;
+    all = all.concat(data);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
+// Display-time cleanup: strip a leading requisition code, strip HTML, decode entities.
+// Written general (not tied to current Greenhouse code formats). Storage stays raw.
+function cleanDescription(html) {
+  if (!html) return "";
+  let s = html;
+  s = s.replace(/<\s*br\s*\/?>/gi, "\n");
+  s = s.replace(/<\/\s*(p|div|li|h[1-6]|tr)\s*>/gi, "\n");
+  s = s.replace(/<[^>]+>/g, "");
+  const ta = document.createElement("textarea");
+  ta.innerHTML = s;
+  s = ta.value;
+  s = s.replace(/\u00a0/g, " ");
+  // leading code: an uppercase token containing at least one digit, at the very start
+  s = s.replace(/^\s*[A-Z][A-Z0-9-]*\d[A-Z0-9-]*\s+/, "");
+  s = s.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return s;
+}
+
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt)) return d;
+  return dt.toISOString().slice(0, 10);
+}
+
+function fmtSalary(r) {
+  if (r.salary_min == null && r.salary_max == null) return "";
+  const cur = r.salary_currency || "";
+  const n = (v) => v == null ? "" : Number(v).toLocaleString();
+  if (r.salary_min != null && r.salary_max != null) return cur + " " + n(r.salary_min) + " to " + n(r.salary_max);
+  return cur + " " + n(r.salary_min != null ? r.salary_min : r.salary_max);
+}
+
+// ---- Data load ----
+async function init() {
+  try {
+    // latest snapshot date
+    const { data: latest, error: e1 } = await supabaseClient
+      .from("jobs_location_flags").select("snapshot_date")
+      .order("snapshot_date", { ascending: false }).limit(1);
+    if (e1) throw e1;
+    if (!latest || !latest.length) { showError("No rows found in jobs_location_flags."); return; }
+    state.snapshotDate = latest[0].snapshot_date;
+
+    // earliest snapshot date (for history depth)
+    const { data: earliest } = await supabaseClient
+      .from("jobs_location_flags").select("snapshot_date")
+      .order("snapshot_date", { ascending: true }).limit(1);
+    state.earliestDate = earliest && earliest.length ? earliest[0].snapshot_date : state.snapshotDate;
+
+    // all rows for the latest snapshot
+    state.rows = await fetchAllRows("jobs_location_flags", LIST_COLUMNS, (q) =>
+      q.eq("snapshot_date", state.snapshotDate).order("watchlist_company", { ascending: true }).order("title", { ascending: true })
+    );
+
+    document.getElementById("loading").style.display = "none";
+    render();
+  } catch (err) {
+    document.getElementById("loading").style.display = "none";
+    showError((err && err.message) ? err.message : String(err));
+    console.error(err);
+  }
+}
+
+function dayCount() {
+  const a = new Date(state.earliestDate), b = new Date(state.snapshotDate);
+  const days = Math.round((b - a) / 86400000) + 1;
+  return isNaN(days) ? 1 : days;
+}
+
+// ---- Render ----
+function render() {
+  document.getElementById("sub").textContent =
+    "Snapshot " + fmtDate(state.snapshotDate) + " | " + state.rows.length.toLocaleString() + " open roles across " +
+    new Set(state.rows.map(r => r.watchlist_company)).size + " companies";
+
+  // cards
+  const wa = state.rows.filter(r => r.maybe_wa).length;
+  const rem = state.rows.filter(r => r.maybe_remote_us).length;
+  document.getElementById("cards").innerHTML =
+    card(state.rows.length, "Open roles") +
+    card(new Set(state.rows.map(r => r.watchlist_company)).size, "Companies") +
+    card(wa, "WA candidates") +
+    card(rem, "Remote-US candidates");
+
+  // freshness
+  const days = dayCount();
+  document.getElementById("freshnessPanel").style.display = "block";
+  document.getElementById("freshnessHint").innerHTML =
+    "History so far: <strong>" + days + (days === 1 ? " day" : " days") + "</strong> (" + fmtDate(state.earliestDate) +
+    " to " + fmtDate(state.snapshotDate) + "). Time signals (how long a role has been open, and whether it was recently edited) " +
+    "become meaningful as snapshots accumulate. With one day of history every role's first-seen is the same date, which is expected, not a bug. " +
+    "The how-long-open and recently-edited views will be added here once several days exist.";
+
+  // company dropdown
+  const sel = document.getElementById("companySel");
+  const companies = Array.from(new Set(state.rows.map(r => r.watchlist_company))).sort();
+  sel.innerHTML = '<option value="">All companies</option>' +
+    companies.map(c => '<option value="' + c + '">' + c + '</option>').join("");
+
+  document.getElementById("chartPanel").style.display = "block";
+  document.getElementById("listPanel").style.display = "block";
+
+  drawChart();
+  renderTable();
+  wireControls();
+}
+
+function card(n, l) {
+  return '<div class="card"><div class="n">' + Number(n).toLocaleString() + '</div><div class="l">' + l + '</div></div>';
+}
+
+let chartGeom = [];
+function drawChart() {
+  const counts = {};
+  state.rows.forEach(r => { counts[r.watchlist_company] = (counts[r.watchlist_company] || 0) + 1; });
+  const data = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+  const canvas = document.getElementById("chart");
+  const rowH = 26, padTop = 6, padBottom = 6, labelW = 130, valW = 60;
+  const cssW = Math.max(700, (document.getElementById("chartWrap").clientWidth || 700));
+  const cssH = padTop + padBottom + data.length * rowH;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cssW + "px";
+  canvas.style.height = cssH + "px";
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const max = data.length ? data[0][1] : 1;
+  const barAreaW = cssW - labelW - valW - 12;
+  chartGeom = [];
+
+  ctx.font = "12px -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.textBaseline = "middle";
+  data.forEach(([company, n], i) => {
+    const y = padTop + i * rowH;
+    const cy = y + rowH / 2;
+    ctx.fillStyle = "#9aa3b2";
+    ctx.textAlign = "right";
+    ctx.fillText(company, labelW - 8, cy);
+
+    const w = Math.max(2, (n / max) * barAreaW);
+    ctx.fillStyle = company === state.filters.company ? "#7db4ff" : "#4f9cff";
+    ctx.fillRect(labelW, y + 4, w, rowH - 8);
+
+    ctx.fillStyle = "#e6e8ec";
+    ctx.textAlign = "left";
+    ctx.fillText(n.toLocaleString(), labelW + w + 6, cy);
+
+    chartGeom.push({ company, y, h: rowH });
+  });
+
+  canvas.onclick = (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const my = ev.clientY - rect.top;
+    const hit = chartGeom.find(g => my >= g.y && my < g.y + g.h);
+    if (hit) {
+      state.filters.company = state.filters.company === hit.company ? "" : hit.company;
+      document.getElementById("companySel").value = state.filters.company;
+      state.page = 1;
+      drawChart();
+      renderTable();
+    }
+  };
+}
+
+function applyFilters() {
+  const f = state.filters;
+  const q = f.search.trim().toLowerCase();
+  return state.rows.filter(r => {
+    if (f.company && r.watchlist_company !== f.company) return false;
+    if (f.wa || f.remote) {
+      const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_us);
+      if (!ok) return false;
+    }
+    if (q) {
+      const hay = ((r.title || "") + " " + (r.watchlist_company || "") + " " + (r.location || "")).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderTable() {
+  const filtered = applyFilters();
+  const total = filtered.length;
+  const pages = Math.max(1, Math.ceil(total / state.pageSize));
+  if (state.page > pages) state.page = pages;
+  const start = (state.page - 1) * state.pageSize;
+  const slice = filtered.slice(start, start + state.pageSize);
+
+  document.getElementById("count").textContent =
+    total.toLocaleString() + " role" + (total === 1 ? "" : "s") + " matched" +
+    (total ? (" (showing " + (start + 1) + " to " + Math.min(start + state.pageSize, total) + ")") : "");
+
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+  slice.forEach(r => {
+    const key = r.watchlist_company + "::" + r.ats_id;
+    const link = r.apply_url || r.url;
+    const badges =
+      (r.maybe_wa ? '<span class="badge wa">WA</span>' : "") +
+      (r.maybe_remote_us ? '<span class="badge rem">Remote</span>' : "");
+    const tr = document.createElement("tr");
+    tr.className = "jobrow";
+    tr.innerHTML =
+      '<td class="company">' + esc(r.watchlist_company) + '</td>' +
+      '<td>' + esc(r.title || "(no title)") + badges + '</td>' +
+      '<td class="loc">' + esc(r.location || "") + '</td>' +
+      '<td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
+    tr.onclick = () => toggleRow(key, r, tr);
+    tbody.appendChild(tr);
+
+    if (state.expanded === key) {
+      appendDetail(tbody, key, r);
+    }
+  });
+
+  renderPager(total, pages);
+}
+
+function renderPager(total, pages) {
+  const p = document.getElementById("pager");
+  p.innerHTML = "";
+  if (total === 0) return;
+  const prev = document.createElement("button");
+  prev.textContent = "Prev"; prev.disabled = state.page <= 1;
+  prev.onclick = () => { state.page--; renderTable(); };
+  const next = document.createElement("button");
+  next.textContent = "Next"; next.disabled = state.page >= pages;
+  next.onclick = () => { state.page++; renderTable(); };
+  const label = document.createElement("span");
+  label.textContent = "Page " + state.page + " of " + pages;
+  p.appendChild(prev); p.appendChild(label); p.appendChild(next);
+}
+
+function toggleRow(key, r, tr) {
+  state.expanded = (state.expanded === key) ? null : key;
+  renderTable();
+}
+
+async function appendDetail(tbody, key, r) {
+  const tr = document.createElement("tr");
+  tr.className = "detail";
+  const td = document.createElement("td");
+  td.colSpan = 4;
+  const meta = [
+    r.department ? "Dept: " + r.department : "",
+    r.employment_type || "",
+    fmtSalary(r),
+    r.posted_at ? "Posted: " + fmtDate(r.posted_at) : "",
+    "First in this snapshot: " + fmtDate(r.snapshot_date)
+  ].filter(Boolean).join("  |  ");
+  td.innerHTML = '<div class="meta">' + esc(meta) + '</div><div class="desc" id="desc_' + cssId(key) + '">Loading description...</div>';
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+
+  const target = td.querySelector(".desc");
+  try {
+    let raw = state.descCache[key];
+    if (raw === undefined) {
+      const { data, error } = await supabaseClient
+        .from("job_content").select("description")
+        .eq("watchlist_company", r.watchlist_company).eq("ats_id", r.ats_id).limit(1);
+      if (error) throw error;
+      raw = (data && data.length) ? data[0].description : null;
+      state.descCache[key] = raw;
+    }
+    target.textContent = raw ? cleanDescription(raw) : "No description stored for this role.";
+  } catch (err) {
+    target.textContent = "Could not load description: " + ((err && err.message) ? err.message : String(err));
+  }
+}
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+function cssId(s) { return s.replace(/[^a-z0-9]/gi, "_"); }
+
+function wireControls() {
+  const search = document.getElementById("search");
+  search.oninput = () => { state.filters.search = search.value; state.page = 1; renderTable(); };
+  const sel = document.getElementById("companySel");
+  sel.onchange = () => { state.filters.company = sel.value; state.page = 1; drawChart(); renderTable(); };
+  document.getElementById("waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
+  document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
+  document.getElementById("clearBtn").onclick = () => {
+    state.filters = { company: "", wa: false, remote: false, search: "" };
+    state.page = 1;
+    search.value = ""; sel.value = "";
+    document.getElementById("waChk").checked = false;
+    document.getElementById("remChk").checked = false;
+    drawChart(); renderTable();
+  };
+}
+
+window.addEventListener("resize", () => { if (state.rows.length) drawChart(); });
+init();
+</script>
+</body>
+</html>
