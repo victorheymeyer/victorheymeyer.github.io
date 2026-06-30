@@ -173,20 +173,43 @@ async function fetchAllRows(table, selectCols, applyFilters) {
   return all;
 }
 
-// Display-time render: strip the leading requisition code, then render to safe HTML.
-// Handles both cases in the data: real HTML (Greenhouse) and plain text with
-// newlines/bullets (Ashby). General, not tied to current formats. Storage stays raw.
+// Display-time render: render to safe HTML, then drop a leading requisition-code
+// block. Handles both real HTML (Greenhouse/Ashby now) and legacy plain text with
+// newlines/bullets. General, not tied to current formats. Storage stays raw.
 function renderDescription(html) {
   if (!html) return "";
-  let s = html;
-  // remove a leading requisition code (uppercase token containing a digit),
-  // allowing for leading opening tags and whitespace/&nbsp; before the real text
-  s = s.replace(/^(\s*(?:<[^>]+>\s*)*)[A-Z][A-Z0-9-]*\d[A-Z0-9-]*(?:&nbsp;|\s)*/, "$1");
   // decide whether this is real HTML or plain text (a bare "<500" is not a tag)
-  const looksHtml = /<\/?(p|br|div|ul|ol|li|strong|b|em|i|span|h[1-6]|a|table|tr|td)\b/i.test(s);
-  const out = looksHtml ? s : plainTextToHtml(s);
-  // sanitize before it ever touches the DOM
-  return DOMPurify.sanitize(out, { USE_PROFILES: { html: true } });
+  const looksHtml = /<\/?(p|br|div|ul|ol|li|strong|b|em|i|span|h[1-6]|a|table|tr|td)\b/i.test(html);
+  const safe = DOMPurify.sanitize(looksHtml ? html : plainTextToHtml(html), { USE_PROFILES: { html: true } });
+  return stripLeadingReqCode(safe);
+}
+
+// A requisition code is a short token of uppercase letters/digits/hyphens that
+// contains at least one digit (e.g. FEQ227R42, CSQ327R31, SLSQ227R53, P-156).
+function isReqCode(text) {
+  const t = (text || "").trim();
+  return t.length > 0 && t.length <= 16 && /^[A-Z][A-Z0-9-]*\d[A-Z0-9-]*$/.test(t);
+}
+
+// Remove the first block whose only content is a req code, wrapper and all, so no
+// empty paragraph is left behind. Falls back to a text-level strip if there's no wrapper.
+function stripLeadingReqCode(safeHtml) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = safeHtml;
+  // skip empty leading nodes, then test the first element with text
+  let node = wrap.firstChild;
+  while (node && node.nodeType === 3 && !node.textContent.trim()) node = node.nextSibling;
+  if (node && node.nodeType === 1 && isReqCode(node.textContent)) {
+    node.remove();
+    return wrap.innerHTML;
+  }
+  // no wrapper: code may be bare leading text inside the first element or root
+  if (node && node.nodeType === 1) {
+    node.innerHTML = node.innerHTML.replace(/^\s*[A-Z][A-Z0-9-]*\d[A-Z0-9-]*(?:&nbsp;|\s)+/, "");
+  } else if (node && node.nodeType === 3) {
+    node.textContent = node.textContent.replace(/^\s*[A-Z][A-Z0-9-]*\d[A-Z0-9-]*\s+/, "");
+  }
+  return wrap.innerHTML;
 }
 
 // Turn plain text into paragraphs and bullet lists. Double newlines split blocks,
