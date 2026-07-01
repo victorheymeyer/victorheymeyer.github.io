@@ -2,6 +2,7 @@
 import hashlib
 import html as html_mod
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -57,6 +58,57 @@ HTML_EXTRACTORS = {
 }
 # -----------------------------------------------------------------------------
 
+# --- Discipline classification (frozen v4) -----------------------------------
+# Maps a job title to one of 25 disciplines (craft/training, not org unit).
+# Ordered rules, first match wins: specific/technical craft is matched before
+# broad seniority words; Engineering (engineer/architect) precedes the
+# blue-collar buckets; two late catch-alls ("analyst" -> Data & Analytics,
+# "specialist" -> Customer Success) only fire when nothing domain-specific hit.
+# Re-run every load so rule changes self-heal existing rows on the next pull.
+
+_DISCIPLINE_RULES = [
+    ("Executive", r"\b(chief|ceo|cfo|coo|cto|cmo|cro|cio|general manager|country manager|managing director|\bpresident\b|vice president|\bvp\b|\brvp\b|\bsvp\b|head of)\b", r"account executive"),
+    ("Research", r"\b(research scientist|research engineer|researcher|applied scientist|research fellow|research intern|research lead|research manager|economist|ml researcher|ai researcher|machine learning researcher|postdoc|quantitative researcher|psychologist|fellows program|frontier agents intern)\b", None),
+    ("Data & Analytics", r"\b(data analyst|business intelligence|bi analyst|analytics|data scientist|data science|business analyst|product analyst|digital analyst|insights|competitive intelligence|market intelligence|data quality)\b", None),
+    ("Product Management", r"\b(product manager|product management|group product manager|director of product|product director|head of product|product owner|product lead)\b", None),
+    ("Project/Program Management", r"\b(project manager|program manager|technical program|tpm|project lead|delivery manager|scrum master|scheduler|program director|special projects manager|project planner)\b", None),
+    ("Design", r"\b(designer|design|\bux\b|\bui\b|user experience|creative director|creative lead|art director|motion graphics|graphic)\b", None),
+    ("Engineering", r"\b(engineer|engineering|architect|developer|\bsre\b|devops|firmware|technical lead|software|\bswe\b|penetration tester|propulsion analyst|thermal analyst)\b", None),
+    ("IT / Infrastructure", r"\b(data center|datacenter|it support|it network|it systems|systems administrator|network administrator|network infrastructure|help desk|helpdesk|it helpdesk|technology partner|desktop support|site reliability lead)\b", None),
+    ("Security", r"\b(security analyst|security operator|security officer|soc analyst|threat|cyber|cybersecurity|information security|infosec|insider risk|physical security|security risk|incident response|security operations|comsec|security controls|security hardware|identity & access|iam\b)\b", None),
+    ("Safety / EHS", r"\b(environmental health|health & safety|health and safety|\behs\b|industrial hygienist|safety specialist|specialist, safety|safety support|environmental specialist)\b", None),
+    ("Quality / Inspection", r"\b(quality inspector|quality specialist|nde inspector|\bndt\b|\bnde\b|inspector|quality assurance|\bqa\b|precision inspector|welding inspector|quality control)\b", None),
+    ("Skilled Trades", r"\b(welder|welding|machinist|\bcnc\b|\bedm\b|electrician|\bhvac\b|plumber|technician|mechanic|maintenance|fabricator|fabrication|tube bender|foreman|superintendent|journeyman|diamond turning|tool & die|tool and die|cmm programmer|driver)\b", r"data center technician|network|it support|it systems"),
+    ("Manufacturing / Production", r"\b(production|manufacturing|assembly|build specialist|build supervisor|machine operator|operator|process operator|material handler|automation & controls|integration & test|integration specialist|test specialist|metrology|smt\b|receiving specialist|shipping specialist)\b", None),
+    ("Supply Chain / Procurement", r"\b(sourcing|global supply|supply manager|supplier|buyer|procurement|inventory|materials management|purchasing|logistics|supply chain|warehouse|supply materials)\b", None),
+    ("Hospitality / Facilities", r"\b(chef|cook|barista|porter|mixologist|food service|hospitality|facilities|janitor|custodian|soft services)\b", None),
+    ("Sales", r"\b(sales|account executive|\bae\b|account manager|\bsdr\b|\bbdr\b|sales development|business development|revenue|go.?to.?market|\bgtm\b|partnerships|partner development|partner manager|partner lead|partner specialist|alliance|alliances|channel|account lead|account specialist|renewals|renewal manager|value advisor|relationship manager|market manager|growth lead|growth manager|growth specialist|enterprise\b|market access)\b", None),
+    ("Marketing", r"\b(marketing|marketer|\bbrand\b|demand gen|demand generation|growth marketing|content|communications|\bcomms\b|social media|\bseo\b|\bsem\b|public relations|\bpr\b|copy|editor|events|campaign|paid media|analyst relations|web producer|photographer|technical writer)\b", None),
+    ("Finance", r"\b(finance|financial|accounting|accountant|accounts payable|accounts receivable|controller|fp&a|treasury|audit|auditor|\btax\b|commissions|payroll|underwriter|underwriting|credit|collections|\bloan\b|mortgage|billing|capital markets|controllership|reporting|fraud|pricing|deal desk|deal pricing|investment|investments|liquidity|stock plan|stock administration|transfer pricing|lending)\b", None),
+    ("Legal", r"\b(legal|counsel|attorney|paralegal|compliance|privacy|contracts manager|contract manager|contracts negotiator|sanctions|regulatory|immigration|trust & safety)\b", None),
+    ("Strategy", r"\b(strategy|strategic|strategist|corporate development|corp dev|\bpolicy\b|government affairs|public policy|government incentives|land acquisition|site selection|real estate|construction manager|campus planning|site expansion)\b", None),
+    ("Operations", r"\b(operations|\bops\b|bizops|biz ops|business operations|business process|resource manager|workforce planning|localization|professional services|practice manager)\b", None),
+    ("Recruiting / People", r"\b(recruiter|recruiting|talent|\bpeople\b|human resources|\bhr\b|sourcer|benefits|compensation|employee relations|total rewards|candidate specialist|learning|generalist|mobility)\b", None),
+    ("Customer Success", r"\b(customer success|customer support|technical account manager|\btam\b|implementation|onboarding|support specialist|consultant|solutions consultant|premium support|product support|client services|member service|escalation|escalations|enablement|delivery success|services solutions|technical solutions|solution specialist|technical delivery|deployment)\b", None),
+    ("Administrative", r"\b(executive assistant|administrative|\badmin\b|office manager|receptionist|coordinator|assistant|briefing manager)\b", None),
+    ("Data & Analytics", r"\banalyst\b", None),
+    ("Customer Success", r"\bspecialist\b", None),
+]
+
+_DISCIPLINE_COMPILED = [
+    (d, re.compile(p, re.I), re.compile(n, re.I) if n else None)
+    for d, p, n in _DISCIPLINE_RULES
+]
+
+
+def classify_discipline(title):
+    t = title or ""
+    for discipline, pos, neg in _DISCIPLINE_COMPILED:
+        if pos.search(t) and not (neg and neg.search(t)):
+            return discipline
+    return "Other"
+# -----------------------------------------------------------------------------
+
 snapshot_date = datetime.now(timezone.utc).date().isoformat()
 
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title", "location",
@@ -64,7 +116,7 @@ FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title"
              "salary_currency", "posted_at", "fetched_at", "url", "apply_url", "raw",
              "description_hash"]
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
-            "url", "apply_url", "last_seen", "fetched_at"]
+            "url", "apply_url", "last_seen", "fetched_at", "discipline"]
 
 
 def load_watchlist():
@@ -133,6 +185,9 @@ def main():
                     # Store HTML for display; fall back to plain text if we
                     # didn't get HTML for this job.
                     d["description"] = html_map.get(d["ats_id"]) or plain
+
+                    # Classify discipline from title (frozen v4 rules).
+                    d["discipline"] = classify_discipline(d.get("title"))
 
                     fact_rows.append({k: d.get(k) for k in FACT_COLS})
                     dim_rows.append({k: d.get(k) for k in DIM_COLS})
