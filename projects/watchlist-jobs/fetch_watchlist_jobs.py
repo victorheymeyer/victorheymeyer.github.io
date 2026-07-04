@@ -108,6 +108,120 @@ def classify_discipline(title):
     return "Other"
 # -----------------------------------------------------------------------------
 
+# --- Role classification (Title_Role_Rules v4) -------------------------------
+# Maps a job title to a base role archetype using ordered keyword rules,
+# first match wins. Each rule has one or two keywords joined by an operator:
+#   op == "AND"  -> every keyword must be present
+#   op == "OR"   -> any keyword present (also used for single-keyword rules)
+# Matching is whole-word and case-insensitive. Ordering matters: compound and
+# specific rules sit above broad catch-alls (e.g. Marketing precedes bare
+# Market; Program Manager precedes bare Program). Unmatched titles return None
+# (stored as NULL) rather than being forced into a catch-all.
+# Re-run every load so rule edits self-heal existing rows on the next pull.
+#
+# Source of truth: Title_Role_Rules_v4.xlsx, regenerated into this list via a
+# Colab cell when rules change. Do not hand-edit individual rows here without
+# updating the spreadsheet too.
+
+ROLE_RULES = [
+    {"order": 1, "role": "Finance & Strategy", "op": "AND", "keywords": ["Finance", "Strategy"]},
+    {"order": 2, "role": "Strategy & Operations", "op": "AND", "keywords": ["Strategy", "Operations"]},
+    {"order": 3, "role": "Finance", "op": "OR", "keywords": ["Finance", "Financial"]},
+    {"order": 4, "role": "Audit", "op": "OR", "keywords": ["Audit", "Auditor"]},
+    {"order": 5, "role": "Engineering", "op": None, "keywords": ["Engineering"]},
+    {"order": 6, "role": "Engineer", "op": None, "keywords": ["Engineer"]},
+    {"order": 7, "role": "Account Exec/Mgr", "op": "OR", "keywords": ["Account Executive", "Account Exec"]},
+    {"order": 8, "role": "Account Manager", "op": "OR", "keywords": ["Account Manager", "Account Mgr"]},
+    {"order": 9, "role": "Product Manager", "op": "OR", "keywords": ["Product Manager", "Product Management"]},
+    {"order": 10, "role": "Program Manager", "op": "OR", "keywords": ["Program Manager", "Program"]},
+    {"order": 11, "role": "Project Manager", "op": None, "keywords": ["Project Manager"]},
+    {"order": 12, "role": "Sales Dev", "op": None, "keywords": ["Sales Development"]},
+    {"order": 13, "role": "Biz Dev", "op": None, "keywords": ["Business Development"]},
+    {"order": 14, "role": "Relationship Manager", "op": None, "keywords": ["Relationship Manager"]},
+    {"order": 15, "role": "Designer", "op": "OR", "keywords": ["Designer", "Design"]},
+    {"order": 16, "role": "Technician", "op": None, "keywords": ["Technician"]},
+    {"order": 17, "role": "Marketing", "op": None, "keywords": ["Marketing"]},
+    {"order": 18, "role": "Scientist", "op": "OR", "keywords": ["Scientist", "Science"]},
+    {"order": 19, "role": "Analyst (Other)", "op": "OR", "keywords": ["Analyst", "Analysis"]},
+    {"order": 20, "role": "Recruiter", "op": "OR", "keywords": ["Recruiter", "Recruiting"]},
+    {"order": 21, "role": "Specialist", "op": None, "keywords": ["Specialist"]},
+    {"order": 22, "role": "Chief of Staff", "op": None, "keywords": ["Chief of Staff"]},
+    {"order": 23, "role": "Legal & Counsel", "op": "OR", "keywords": ["Counsel", "Legal"]},
+    {"order": 24, "role": "Architect", "op": None, "keywords": ["Architect"]},
+    {"order": 25, "role": "Customer Success", "op": None, "keywords": ["Customer Success"]},
+    {"order": 26, "role": "Customer Support", "op": None, "keywords": ["Customer Support"]},
+    {"order": 27, "role": "Consultant", "op": None, "keywords": ["Consultant"]},
+    {"order": 28, "role": "Coordinator", "op": None, "keywords": ["Coordinator"]},
+    {"order": 29, "role": "Assistant", "op": None, "keywords": ["Assistant"]},
+    {"order": 30, "role": "Strategy", "op": "OR", "keywords": ["Strategy", "Strategist"]},
+    {"order": 31, "role": "Accounting", "op": "OR", "keywords": ["Accountant", "Accounting"]},
+    {"order": 32, "role": "Market", "op": None, "keywords": ["Market"]},
+    {"order": 33, "role": "Inspector", "op": None, "keywords": ["Inspector"]},
+    {"order": 34, "role": "Admin", "op": "OR", "keywords": ["Admin", "Administrator"]},
+    {"order": 35, "role": "Machinist", "op": "OR", "keywords": ["Machinist", "Machine"]},
+    {"order": 36, "role": "Corp Dev", "op": None, "keywords": ["Corporate Development"]},
+    {"order": 37, "role": "Alliance", "op": "OR", "keywords": ["Alliance", "Alliances"]},
+    {"order": 38, "role": "Partnerships", "op": None, "keywords": ["Partnerships"]},
+    {"order": 39, "role": "Economist", "op": None, "keywords": ["Economist"]},
+    {"order": 40, "role": "Cook", "op": "OR", "keywords": ["Cook", "chef"]},
+    {"order": 41, "role": "Enablement", "op": None, "keywords": ["Enablement"]},
+    {"order": 42, "role": "Developer", "op": None, "keywords": ["Developer"]},
+    {"order": 43, "role": "Incident", "op": "OR", "keywords": ["Incident", "Escalations"]},
+    {"order": 44, "role": "Engagement", "op": None, "keywords": ["Engagement"]},
+    {"order": 45, "role": "Mechanic", "op": None, "keywords": ["Mechanic"]},
+    {"order": 46, "role": "Researcher", "op": None, "keywords": ["Researcher"]},
+    {"order": 47, "role": "Research", "op": None, "keywords": ["Research"]},
+    {"order": 48, "role": "HR", "op": None, "keywords": ["People"]},
+    {"order": 49, "role": "Analytics", "op": None, "keywords": ["Analytics"]},
+    {"order": 50, "role": "Tax", "op": None, "keywords": ["Tax"]},
+    {"order": 51, "role": "Fraud", "op": None, "keywords": ["Fraud"]},
+    {"order": 52, "role": "Financing", "op": None, "keywords": ["Financing"]},
+    {"order": 53, "role": "Support (Other)", "op": None, "keywords": ["Support"]},
+    {"order": 54, "role": "Production", "op": "OR", "keywords": ["Production", "Manufacturing"]},
+    {"order": 55, "role": "Delivery Success", "op": None, "keywords": ["Delivery Success"]},
+    {"order": 56, "role": "Trainer", "op": None, "keywords": ["Trainer"]},
+    {"order": 57, "role": "Technical", "op": "OR", "keywords": ["Tech", "Technical"]},
+    {"order": 58, "role": "Contract Job", "op": None, "keywords": ["(Contract)"]},
+    {"order": 59, "role": "Contract", "op": "OR", "keywords": ["Contract", "Contracts"]},
+    {"order": 60, "role": "Driver", "op": None, "keywords": ["Driver"]},
+    {"order": 61, "role": "Sourcing", "op": None, "keywords": ["Sourcing"]},
+    {"order": 62, "role": "Welder", "op": "OR", "keywords": ["Welder", "Welding"]},
+    {"order": 63, "role": "Planning", "op": None, "keywords": ["Planning"]},
+    {"order": 64, "role": "Sales (other)", "op": None, "keywords": ["Sales"]},
+    {"order": 65, "role": "GTM (other)", "op": None, "keywords": ["GTM"]},
+    {"order": 66, "role": "Operations (other)", "op": None, "keywords": ["operations"]},
+]
+
+# Pre-compile each keyword to a whole-word, case-insensitive pattern once,
+# preserving the intended first-match-wins order (by "order" field).
+_ROLE_COMPILED = [
+    {
+        "role": r["role"],
+        "op": r["op"],
+        "patterns": [
+            re.compile(r"\b" + re.escape(str(k).strip()) + r"\b", re.I)
+            for k in r["keywords"]
+        ],
+    }
+    for r in sorted(ROLE_RULES, key=lambda x: x["order"])
+]
+
+
+def classify_role(title):
+    t = title or ""
+    if not t:
+        return None
+    for rule in _ROLE_COMPILED:
+        pats = rule["patterns"]
+        if rule["op"] == "AND":
+            hit = all(p.search(t) for p in pats)
+        else:  # "OR" or single-keyword
+            hit = any(p.search(t) for p in pats)
+        if hit:
+            return rule["role"]
+    return None
+# -----------------------------------------------------------------------------
+
 snapshot_date = datetime.now(timezone.utc).date().isoformat()
 
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title", "location",
@@ -115,7 +229,7 @@ FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title"
              "salary_currency", "posted_at", "fetched_at", "url", "apply_url", "raw",
              "description_hash"]
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
-            "url", "apply_url", "last_seen", "fetched_at", "discipline"]
+            "url", "apply_url", "last_seen", "fetched_at", "discipline", "role_keyword"]
 
 
 def load_watchlist():
@@ -187,6 +301,9 @@ def main():
 
                     # Classify discipline from title (frozen v4 rules).
                     d["discipline"] = classify_discipline(d.get("title"))
+
+                    # Classify role archetype from title (Title_Role_Rules v4).
+                    d["role_keyword"] = classify_role(d.get("title"))
 
                     fact_rows.append({k: d.get(k) for k in FACT_COLS})
                     dim_rows.append({k: d.get(k) for k in DIM_COLS})
