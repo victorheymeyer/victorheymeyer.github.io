@@ -222,6 +222,74 @@ def classify_role(title):
     return None
 # -----------------------------------------------------------------------------
 
+# --- Level classification (frozen v1) ----------------------------------------
+# Maps a job title to a seniority/level value, an axis independent of
+# discipline and role. Ordered rules, first match wins. Each rule lists one or
+# two patterns; multiple patterns must ALL match (AND, used for "Senior +
+# word" combos so word order/adjacency doesn't matter). Titles are normalized
+# (Sr./Sr/Snr/Snr. -> Senior) before classification, but the normalized string
+# is only used for matching, never written back to the stored title. Unmatched
+# titles return None (stored as NULL). Re-run every load so rule edits
+# self-heal existing rows on the next pull.
+
+_SENIOR_PATTERN = re.compile(r"\b(?:sr|snr)\.?\b", re.IGNORECASE)
+
+
+def normalize_title_for_level(title):
+    if not title:
+        return title
+    return _SENIOR_PATTERN.sub("Senior", title)
+
+
+_LEVEL_RULES = [
+    ("CXO",              [r"\bchief\b", r"\bofficer\b"]),
+    ("VP",                [r"\b(vice\s+president|vp)\b"]),
+    ("GM",                [r"\b(general\s+manager|gm)\b"]),
+    ("Chief of Staff",    [r"\b(chief\s+of\s+staff|cos)\b"]),
+    ("Supervisor",        [r"\bsupervisor\b"]),
+    ("Superintendent",    [r"\bsuperintendent\b"]),
+    ("Senior Director",   [r"\bsenior\b", r"\bdirector\b"]),
+    ("Director",          [r"\b(director|dir\.?)\b"]),
+    ("Head of",           [r"\bhead\s+of\b"]),
+    ("Senior Principal",  [r"\bsenior\b", r"\bprincipal\b"]),
+    ("Principal",         [r"\bprincipal\b"]),
+    ("Staff",             [r"\bstaff\b"]),
+    ("Lead",              [r"\blead\b"]),
+    ("Senior Manager",    [r"\bsenior\b", r"\bmanager\b"]),
+    ("Manager",           [r"\b(manager|mgr\.?)\b"]),
+    ("Senior Analyst",    [r"\bsenior\b", r"\banalyst\b"]),
+    ("Analyst",           [r"\banalyst\b"]),
+    ("Senior Associate",  [r"\bsenior\b", r"\bassociate\b"]),
+    ("Associate",         [r"\bassociate\b"]),
+    ("Specialist",        [r"\bspecialist\b"]),
+    ("Coordinator",       [r"\bcoordinator\b"]),
+    ("Assistant",         [r"\bassistant\b"]),
+    ("Rotation",          [r"\brotation\b"]),
+    ("I",                 [r"\bI\b"]),
+    ("II",                [r"\bII\b"]),
+    ("Senior",            [r"\bsenior\b"]),  # catch-all, must stay last
+]
+_LEVEL_CASE_SENSITIVE = {"I", "II"}
+
+_LEVEL_COMPILED = [
+    (
+        name,
+        [re.compile(p, 0 if name in _LEVEL_CASE_SENSITIVE else re.IGNORECASE) for p in patterns],
+    )
+    for name, patterns in _LEVEL_RULES
+]
+
+
+def classify_level(title):
+    t = normalize_title_for_level(title)
+    if not t:
+        return None
+    for name, patterns in _LEVEL_COMPILED:
+        if all(p.search(t) for p in patterns):
+            return name
+    return None
+# -----------------------------------------------------------------------------
+
 snapshot_date = datetime.now(timezone.utc).date().isoformat()
 
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title", "location",
@@ -229,7 +297,8 @@ FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title"
              "salary_currency", "posted_at", "fetched_at", "url", "apply_url", "raw",
              "description_hash"]
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
-            "url", "apply_url", "last_seen", "fetched_at", "discipline", "role_keyword"]
+            "url", "apply_url", "last_seen", "fetched_at", "discipline", "role_keyword",
+            "level"]
 
 
 def load_watchlist():
@@ -304,6 +373,9 @@ def main():
 
                     # Classify role archetype from title (Title_Role_Rules v4).
                     d["role_keyword"] = classify_role(d.get("title"))
+
+                    # Classify seniority level from title (frozen v1 rules).
+                    d["level"] = classify_level(d.get("title"))
 
                     fact_rows.append({k: d.get(k) for k in FACT_COLS})
                     dim_rows.append({k: d.get(k) for k in DIM_COLS})
