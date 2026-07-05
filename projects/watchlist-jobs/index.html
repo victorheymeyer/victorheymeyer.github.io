@@ -47,6 +47,13 @@
   }
   .controls input[type="text"] { min-width: 240px; flex: 1; }
   .chk { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .msdd { position: relative; display: inline-block; }
+  .msdd-btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer; }
+  .msdd-btn:hover { border-color: var(--accent); }
+  .msdd-btn.active { border-color: var(--accent); color: #cfe0ff; }
+  .msdd-panel { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 210px; max-height: 300px; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+  .msdd-opt { display: flex; align-items: center; gap: 8px; padding: 5px 8px; font-size: 13px; color: var(--text); cursor: pointer; white-space: nowrap; border-radius: 6px; }
+  .msdd-opt:hover { background: var(--panel-2); }
   .clearbtn { background: var(--accent-soft); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
   .clearbtn:hover { border-color: var(--accent); }
 
@@ -96,6 +103,9 @@
     <div class="controls">
       <input type="text" id="search" placeholder="Search title, company, or location">
       <select id="companySel"><option value="">All companies</option></select>
+      <div class="msdd" id="disciplineDD"></div>
+      <div class="msdd" id="roleDD"></div>
+      <div class="msdd" id="levelDD"></div>
       <label class="chk"><input type="checkbox" id="waChk"> WA candidates</label>
       <label class="chk"><input type="checkbox" id="remChk"> Remote-US candidates</label>
       <button class="clearbtn" id="clearBtn">Clear</button>
@@ -136,7 +146,8 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","ats_id","ats_type","title","location",
   "department","employment_type","salary_min","salary_max","salary_currency",
-  "posted_at","url","apply_url","maybe_wa","maybe_remote_us"
+  "posted_at","url","apply_url","maybe_wa","maybe_remote_us",
+  "discipline","role_keyword","level"
 ].join(",");
 
 const state = {
@@ -145,7 +156,7 @@ const state = {
   earliestDate: null,
   dayCount: 0,
   descCache: {},
-  filters: { company: "", wa: false, remote: false, search: "" },
+  filters: { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [] },
   page: 1,
   pageSize: 50,
   expanded: null
@@ -324,6 +335,11 @@ function render() {
   sel.innerHTML = '<option value="">All companies</option>' +
     companies.map(c => '<option value="' + c + '">' + c + '</option>').join("");
 
+  // classifier multi-selects (OR within a dropdown, AND across dropdowns; "(unclassified)" matches nulls)
+  buildMultiSelect("disciplineDD", "discipline", "discipline", "All disciplines");
+  buildMultiSelect("roleDD", "role_keyword", "role", "All roles");
+  buildMultiSelect("levelDD", "level", "level", "All levels");
+
   document.getElementById("chartPanel").style.display = "block";
   document.getElementById("listPanel").style.display = "block";
 
@@ -334,6 +350,52 @@ function render() {
 
 function card(n, l) {
   return '<div class="card"><div class="n">' + Number(n).toLocaleString() + '</div><div class="l">' + l + '</div></div>';
+}
+
+const UNCLASSIFIED = "\u0000none";
+// Build a checkbox dropdown. dataField = row property, filterKey = state.filters key.
+function buildMultiSelect(containerId, dataField, filterKey, allLabel) {
+  const values = Array.from(new Set(state.rows.map(r => r[dataField]).filter(v => v != null && v !== ""))).sort();
+  const hasNull = state.rows.some(r => r[dataField] == null || r[dataField] === "");
+  const container = document.getElementById(containerId);
+  container.innerHTML =
+    '<button type="button" class="msdd-btn"></button>' +
+    '<div class="msdd-panel" hidden>' +
+      values.map(v => '<label class="msdd-opt"><input type="checkbox" value="' + esc(v) + '"> ' + esc(v) + '</label>').join("") +
+      (hasNull ? '<label class="msdd-opt"><input type="checkbox" value="' + UNCLASSIFIED + '"> (unclassified)</label>' : "") +
+    '</div>';
+  const btn = container.querySelector(".msdd-btn");
+  const panel = container.querySelector(".msdd-panel");
+  const shortLabel = allLabel.replace(/^All /, "");
+
+  function updateLabel() {
+    const n = state.filters[filterKey].length;
+    btn.textContent = (n === 0 ? allLabel : shortLabel + " (" + n + ")") + " \u25be";
+    btn.classList.toggle("active", n > 0);
+  }
+  updateLabel();
+
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    document.querySelectorAll(".msdd-panel").forEach(p => { if (p !== panel) p.hidden = true; });
+    panel.hidden = !panel.hidden;
+  };
+  panel.onclick = (e) => e.stopPropagation();
+  panel.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.onchange = () => {
+      const arr = state.filters[filterKey];
+      const i = arr.indexOf(cb.value);
+      if (cb.checked && i < 0) arr.push(cb.value);
+      if (!cb.checked && i >= 0) arr.splice(i, 1);
+      state.page = 1;
+      updateLabel();
+      renderTable();
+    };
+  });
+  container._reset = () => {
+    panel.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+    updateLabel();
+  };
 }
 
 let chartGeom = [];
@@ -393,11 +455,20 @@ function drawChart() {
   };
 }
 
+function classifierMatch(selected, value) {
+  if (!selected || selected.length === 0) return true;
+  const isNull = (value == null || value === "");
+  return selected.some(sel => sel === UNCLASSIFIED ? isNull : sel === value);
+}
+
 function applyFilters() {
   const f = state.filters;
   const q = f.search.trim().toLowerCase();
   return state.rows.filter(r => {
     if (f.company && r.watchlist_company !== f.company) return false;
+    if (!classifierMatch(f.discipline, r.discipline)) return false;
+    if (!classifierMatch(f.role, r.role_keyword)) return false;
+    if (!classifierMatch(f.level, r.level)) return false;
     if (f.wa || f.remote) {
       const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_us);
       if (!ok) return false;
@@ -497,10 +568,17 @@ async function appendDetail(tbody, key, r) {
     salaryStr = cur + mn + " - " + mx;
   }
 
+  const disc = r.discipline ? esc(r.discipline) : "-";
+  const roleKw = r.role_keyword ? esc(r.role_keyword) : "-";
+  const lvl = r.level ? esc(r.level) : "-";
+
   const meta =
     '<div class="metaline"><span class="lbl">Job Info:</span> Dept: ' + dept +
       ' | Function (AI): TBD | Salary Range (All locations): ' + salaryStr +
       ' | Internal Job ID/Req: TBD</div>' +
+    '<div class="metaline"><span class="lbl">Classification:</span> Discipline: ' + disc +
+      ' | Role: ' + roleKw +
+      ' | Level: ' + lvl + '</div>' +
     '<div class="metaline"><span class="lbl">Dates:</span> First Posted (ATS.ID): ' + posted +
       ' | Last Seen: ' + lastSeen +
       ' | Last Revised (Description): TBD</div>' +
@@ -544,13 +622,18 @@ function wireControls() {
   document.getElementById("waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("clearBtn").onclick = () => {
-    state.filters = { company: "", wa: false, remote: false, search: "" };
+    state.filters = { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [] };
     state.page = 1;
     search.value = ""; sel.value = "";
     document.getElementById("waChk").checked = false;
     document.getElementById("remChk").checked = false;
+    ["disciplineDD", "roleDD", "levelDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
     drawChart(); renderTable();
   };
+  // close any open dropdown when clicking elsewhere
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".msdd-panel").forEach(p => { p.hidden = true; });
+  });
 }
 
 window.addEventListener("resize", () => { if (state.rows.length) drawChart(); });
