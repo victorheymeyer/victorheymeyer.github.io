@@ -355,7 +355,7 @@ function card(n, l) {
   return '<div class="card"><div class="n">' + Number(n).toLocaleString() + '</div><div class="l">' + l + '</div></div>';
 }
 
-const UNCLASSIFIED = "\u0000none";
+const UNCLASSIFIED = "__unclassified__";
 // Build a checkbox dropdown. dataField = row property, filterKey = state.filters key.
 function buildMultiSelect(containerId, dataField, filterKey, allLabel) {
   const values = Array.from(new Set(state.rows.map(r => r[dataField]).filter(v => v != null && v !== ""))).sort();
