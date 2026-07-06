@@ -146,7 +146,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","ats_id","ats_type","title","location",
   "department","employment_type","salary_min","salary_max","salary_currency",
-  "posted_at","url","apply_url","maybe_wa","maybe_remote_us",
+  "posted_at","url","apply_url","maybe_wa","maybe_remote_wa",
   "discipline","role_keyword","level"
 ].join(",");
 
@@ -313,7 +313,7 @@ function render() {
 
   // cards
   const wa = state.rows.filter(r => r.maybe_wa).length;
-  const rem = state.rows.filter(r => r.maybe_remote_us).length;
+  const rem = state.rows.filter(r => r.maybe_remote_wa).length;
   document.getElementById("cards").innerHTML =
     card(state.rows.length, "Open roles") +
     card(new Set(state.rows.map(r => r.watchlist_company)).size, "Companies") +
@@ -470,7 +470,7 @@ function applyFilters() {
     if (!classifierMatch(f.role, r.role_keyword)) return false;
     if (!classifierMatch(f.level, r.level)) return false;
     if (f.wa || f.remote) {
-      const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_us);
+      const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_wa);
       if (!ok) return false;
     }
     if (q) {
@@ -507,7 +507,7 @@ function renderTable() {
     const link = r.apply_url || r.url;
     const badges =
       (r.maybe_wa ? '<span class="badge wa">WA</span>' : "") +
-      (r.maybe_remote_us ? '<span class="badge rem">Remote</span>' : "");
+      (r.maybe_remote_wa ? '<span class="badge rem">Remote</span>' : "");
     const dOld = daysOld(r.posted_at);
     const tr = document.createElement("tr");
     tr.className = "jobrow";

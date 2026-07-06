@@ -7,14 +7,22 @@ import sys
 from datetime import datetime, timezone
 
 import httpx
-from jobhive.scrapers import GreenhouseScraper, AshbyScraper
+from jobhive.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper
 from supabase import create_client
 
 SUPABASE_URL = os.environ["JOBS_SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["JOBS_SUPABASE_SERVICE_KEY"]
 sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-SCRAPERS = {"greenhouse": GreenhouseScraper, "ashby": AshbyScraper}
+SCRAPERS = {
+    "greenhouse": GreenhouseScraper,
+    "ashby": AshbyScraper,
+    "amazon": AmazonScraper,
+    "apple": AppleScraper,
+    "google": GoogleScraper,
+    "tiktok": TikTokScraper,
+    "uber": UberScraper,
+}
 
 # --- HTML description capture -------------------------------------------------
 # jobhive flattens descriptions to plain text (Greenhouse: strips all tags;
@@ -442,6 +450,10 @@ def main():
     print("Refreshing freshness columns...")
     sb.rpc("refresh_job_freshness", {"run_date": snapshot_date}).execute()
     print("  refresh_job_freshness done")
+
+    print("Refreshing location flags...")
+    sb.rpc("refresh_location_flags").execute()
+    print("  refresh_location_flags done")
 
     fact_count = sb.table("raw_watchlist_jobs").select("ats_id", count="exact") \
         .eq("snapshot_date", snapshot_date).limit(1).execute().count
