@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 
 import httpx
-from jobhive.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper
+from jobhive.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper
 from supabase import create_client
 
 SUPABASE_URL = os.environ["JOBS_SUPABASE_URL"]
@@ -22,6 +22,7 @@ SCRAPERS = {
     "google": GoogleScraper,
     "tiktok": TikTokScraper,
     "uber": UberScraper,
+    "eightfold": EightfoldScraper,
 }
 
 # --- HTML description capture -------------------------------------------------
@@ -337,15 +338,26 @@ DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "d
 
 
 def load_watchlist():
-    """Read active companies from the watchlist_companies table."""
+    """Read active companies from the watchlist_companies table.
+
+    scraper_kwargs is an optional JSONB column for scrapers that need more
+    than a bare company_slug (e.g. Eightfold tenants on a custom domain like
+    Microsoft, which needs base_url and domain). NULL/empty for every company
+    on a default slug-based setup, so this is a no-op for the existing rows.
+    """
     resp = sb.table("watchlist_companies") \
-        .select("company,ats,slug") \
+        .select("company,ats,slug,scraper_kwargs") \
         .eq("active", True) \
         .order("priority") \
         .execute()
     rows = resp.data or []
     watchlist = [
-        {"company": r["company"], "ats": (r["ats"] or "").lower(), "slug": r["slug"]}
+        {
+            "company": r["company"],
+            "ats": (r["ats"] or "").lower(),
+            "slug": r["slug"],
+            "scraper_kwargs": r.get("scraper_kwargs") or {},
+        }
         for r in rows
     ]
     if not watchlist:
@@ -366,12 +378,13 @@ def main():
     try:
         for entry in watchlist:
             company, ats, slug = entry["company"], entry["ats"], entry["slug"]
+            scraper_kwargs = entry.get("scraper_kwargs") or {}
             if ats not in SCRAPERS:
                 print(f"SKIP {company:12s}: unknown ats '{ats}' (no scraper)")
                 failures.append(company)
                 continue
             try:
-                jobs = SCRAPERS[ats](slug).fetch()
+                jobs = SCRAPERS[ats](slug, **scraper_kwargs).fetch()
 
                 # Supplement with real HTML descriptions where we have an
                 # extractor for this ATS. Failure here is non-fatal: we fall
