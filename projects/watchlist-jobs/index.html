@@ -4,96 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seattle Jobs</title>
-<style>
-  :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --panel-2: #1d212b;
-    --border: #2a2f3a;
-    --text: #e6e8ec;
-    --muted: #9aa3b2;
-    --accent: #4f9cff;
-    --accent-soft: #1f3550;
-    --good: #3fb950;
-    --warn: #d29922;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--text);
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 18px 60px; }
-  h1 { font-size: 22px; margin: 0 0 2px; }
-  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
-
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 22px; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
-  .card .n { font-size: 26px; font-weight: 600; }
-  .card .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 18px; }
-  .panel h2 { font-size: 14px; margin: 0 0 4px; }
-  .panel .hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
-
-  #chartWrap { width: 100%; overflow-x: auto; }
-  canvas { display: block; }
-
-  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
-  .controls input[type="text"], .controls select {
-    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-    border-radius: 8px; padding: 8px 10px; font-size: 13px;
-  }
-  .controls input[type="text"] { min-width: 240px; flex: 1; }
-  .chk { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; cursor: pointer; }
-  .msdd { position: relative; display: inline-block; }
-  .msdd-btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; cursor: pointer; }
-  .msdd-btn:hover { border-color: var(--accent); }
-  .msdd-btn.active { border-color: var(--accent); color: #cfe0ff; }
-  .msdd-panel { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 210px; max-height: 300px; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
-  .msdd-opt { display: flex; align-items: center; gap: 8px; padding: 5px 8px; font-size: 13px; color: var(--text); cursor: pointer; white-space: nowrap; border-radius: 6px; }
-  .msdd-opt:hover { background: var(--panel-2); }
-  .clearbtn { background: var(--accent-soft); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
-  .clearbtn:hover { border-color: var(--accent); }
-
-  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
-  tr.jobrow { cursor: pointer; }
-  tr.jobrow td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  tr.jobrow:hover td { background: var(--panel-2); }
-  .company { color: var(--accent); font-weight: 600; }
-  .loc { color: var(--muted); }
-  .badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 6px; margin-left: 6px; border: 1px solid var(--border); color: var(--muted); }
-  .badge.wa { color: var(--good); border-color: #244d2c; }
-  .badge.rem { color: var(--accent); border-color: var(--accent-soft); }
-  td a { color: var(--accent); text-decoration: none; }
-  td a:hover { text-decoration: underline; }
-  .detail td { background: var(--panel-2); }
-  .detail .meta { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
-  .detail .metaline { margin-bottom: 3px; }
-  .detail .meta .lbl { color: #93c5fd; font-weight: 700; }
-  .detail .desc { color: var(--text); background: #0e1119; border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; font-size: 13px; max-height: 420px; overflow: auto; }
-  .detail .desc * { color: inherit; }
-  .detail .desc p { margin: 0 0 10px; }
-  .detail .desc ul, .detail .desc ol { margin: 0 0 10px; padding-left: 20px; }
-  .detail .desc li { margin-bottom: 4px; }
-  .detail .desc a { color: var(--accent); }
-  .detail .desc h1, .detail .desc h2, .detail .desc h3 { font-size: 14px; margin: 12px 0 6px; }
-
-  .pager { display: flex; gap: 10px; align-items: center; margin-top: 14px; color: var(--muted); font-size: 13px; }
-  .pager button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
-  .pager button:disabled { opacity: .4; cursor: default; }
-  .pager .jump { display: inline-flex; align-items: center; gap: 6px; }
-  .pager .jump input { width: 56px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font-size: 13px; text-align: center; }
-
-  .err { background: #3a1d1d; border: 1px solid #5c2b2b; color: #ffb4b4; border-radius: 10px; padding: 14px 16px; margin-bottom: 18px; }
-  .err code { background: rgba(0,0,0,.3); padding: 1px 5px; border-radius: 4px; }
-  .loading { color: var(--muted); padding: 20px 0; }
-</style>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
 </head>
 <body>
+<div id="siteNav"></div>
 <div class="wrap">
   <h1>Seattle Jobs</h1>
   <div class="sub" id="sub">Loading the latest snapshot...</div>
