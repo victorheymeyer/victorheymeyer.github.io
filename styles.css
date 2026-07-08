@@ -140,7 +140,7 @@ td a:hover { text-decoration: underline; }
 .home .hero { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-24); margin-bottom: var(--sp-24); }
 .home .hero-text h1 { font-size: var(--fs-2xl); margin: 0 0 var(--sp-4); }
 .home .subtitle { color: var(--muted); font-size: var(--fs-md); margin: 0; }
-.home .avatar { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
+.home .avatar { width: 160px; height: 160px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); flex-shrink: 0; }
 .home h2 { font-size: var(--fs-xl); margin: var(--sp-24) 0 var(--sp-12); }
 .home .projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-12); }
 .home .projects-grid .card { display: flex; align-items: center; justify-content: center; min-height: 90px; text-align: center; color: var(--text); text-decoration: none; transition: border-color .15s; }
