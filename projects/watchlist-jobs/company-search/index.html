@@ -68,15 +68,18 @@ function esc(s) {
 
 async function init() {
   try {
-    const { count, error: e1 } = await supabaseClient
-      .from("ats_company_directory").select("id", { count: "exact", head: true });
+    // Server-side group-by via RPC, not a plain select(). A plain
+    // select("ats") over every row gets silently capped at Supabase's
+    // default max-rows-per-request (1000), which with tens of thousands
+    // of rows means only whichever ATS happened to occupy the first 1000
+    // physical rows would ever show up client-side. The RPC does the
+    // count/group-by in Postgres and returns one row per ATS, always
+    // complete regardless of table size.
+    const { data: counts, error: e1 } = await supabaseClient
+      .rpc("ats_company_directory_counts");
     if (e1) throw e1;
-    state.total = count || 0;
-
-    const { data: atsRows, error: e2 } = await supabaseClient
-      .from("ats_company_directory").select("ats");
-    if (e2) throw e2;
-    state.atsList = Array.from(new Set((atsRows || []).map(r => r.ats))).sort();
+    state.atsList = (counts || []).map(r => r.ats).sort();
+    state.total = (counts || []).reduce((sum, r) => sum + Number(r.companies), 0);
 
     document.getElementById("sub").textContent =
       state.total.toLocaleString() + " companies across " + state.atsList.length + " ATS platforms";
