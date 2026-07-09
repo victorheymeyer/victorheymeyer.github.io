@@ -89,16 +89,31 @@ function showError(msg) {
 
 async function fetchAllRows(table, selectCols, applyFilters) {
   const pageSize = 1000;
-  let from = 0;
-  let all = [];
-  while (true) {
-    let q = supabaseClient.from(table).select(selectCols).range(from, from + pageSize - 1);
+  function buildQuery(withCount) {
+    let q = supabaseClient.from(table).select(selectCols, withCount ? { count: "exact" } : undefined);
     if (applyFilters) q = applyFilters(q);
-    const { data, error } = await q;
-    if (error) throw error;
-    all = all.concat(data);
-    if (!data || data.length < pageSize) break;
-    from += pageSize;
+    return q;
+  }
+
+  // First page tells us the exact total row count, so we know how many more
+  // pages exist and can fire them all in parallel instead of paging one
+  // sequential round trip at a time.
+  const first = await buildQuery(true).range(0, pageSize - 1);
+  if (first.error) throw first.error;
+  let all = first.data || [];
+  const total = first.count != null ? first.count : all.length;
+
+  const remainingPages = Math.max(0, Math.ceil(total / pageSize) - 1);
+  if (remainingPages > 0) {
+    const requests = [];
+    for (let p = 1; p <= remainingPages; p++) {
+      requests.push(buildQuery(false).range(p * pageSize, (p + 1) * pageSize - 1));
+    }
+    const results = await Promise.all(requests);
+    for (const r of results) {
+      if (r.error) throw r.error;
+      all = all.concat(r.data || []);
+    }
   }
   return all;
 }
@@ -189,18 +204,17 @@ function fmtSalary(r) {
 // ---- Data load ----
 async function init() {
   try {
-    // latest snapshot date
-    const { data: latest, error: e1 } = await supabaseClient
-      .from("jobs_location_flags").select("snapshot_date")
-      .order("snapshot_date", { ascending: false }).limit(1);
+    // latest and earliest snapshot dates, fetched in parallel instead of
+    // as two sequential round trips
+    const [{ data: latest, error: e1 }, { data: earliest }] = await Promise.all([
+      supabaseClient.from("jobs_location_flags").select("snapshot_date")
+        .order("snapshot_date", { ascending: false }).limit(1),
+      supabaseClient.from("jobs_location_flags").select("snapshot_date")
+        .order("snapshot_date", { ascending: true }).limit(1)
+    ]);
     if (e1) throw e1;
     if (!latest || !latest.length) { showError("No rows found in jobs_location_flags."); return; }
     state.snapshotDate = latest[0].snapshot_date;
-
-    // earliest snapshot date (for history depth)
-    const { data: earliest } = await supabaseClient
-      .from("jobs_location_flags").select("snapshot_date")
-      .order("snapshot_date", { ascending: true }).limit(1);
     state.earliestDate = earliest && earliest.length ? earliest[0].snapshot_date : state.snapshotDate;
 
     // all rows for the latest snapshot

@@ -150,18 +150,21 @@
     }
 
     async function loadStatus() {
-      // Get every distinct snapshot_date by paging past the server-side row cap.
-      let dateRows;
+      // Get one row per snapshot_date (date + count), aggregated server-side
+      // via the get_snapshot_summary() RPC, instead of paging through every
+      // historical row just to compute these stats client-side.
+      let summaryRows;
       try {
-        dateRows = await fetchAllRows('snapshot_date');
-      } catch (dateError) {
-        document.body.insertAdjacentHTML('beforeend', '<p>Failed to load dates: ' + dateError.message + '</p>');
-        console.error(dateError);
+        const { data, error } = await supabaseClient.rpc('get_snapshot_summary');
+        if (error) throw error;
+        summaryRows = data;
+      } catch (summaryError) {
+        document.body.insertAdjacentHTML('beforeend', '<p>Failed to load snapshot summary: ' + summaryError.message + '</p>');
+        console.error(summaryError);
         return;
       }
 
-      const allDates = dateRows.map(r => r.snapshot_date);
-      const uniqueDates = [...new Set(allDates)].sort();
+      const uniqueDates = summaryRows.map(r => r.snapshot_date).sort();
       const earliestDate = uniqueDates[0];
       const latestDate = uniqueDates[uniqueDates.length - 1];
       const totalDays = uniqueDates.length;
@@ -171,8 +174,10 @@
       // capture a different number of models depending on what LiteLLM
       // had listed at that time.
       const rowCountByDate = {};
-      allDates.forEach(d => {
-        rowCountByDate[d] = (rowCountByDate[d] || 0) + 1;
+      let totalRows = 0;
+      summaryRows.forEach(r => {
+        rowCountByDate[r.snapshot_date] = r.row_count;
+        totalRows += r.row_count;
       });
       const earliestRowCount = rowCountByDate[earliestDate];
       const latestRowCount = rowCountByDate[latestDate];
@@ -181,7 +186,7 @@
       document.getElementById('latest-date').textContent = latestDate;
       document.getElementById('total-days').textContent = totalDays.toLocaleString();
       document.getElementById('total-period').textContent = totalPeriod.toLocaleString();
-      document.getElementById('total-rows').textContent = allDates.length.toLocaleString();
+      document.getElementById('total-rows').textContent = totalRows.toLocaleString();
       document.getElementById('row-count-earliest').textContent = earliestRowCount.toLocaleString();
       document.getElementById('row-count-latest').textContent = latestRowCount.toLocaleString();
 
