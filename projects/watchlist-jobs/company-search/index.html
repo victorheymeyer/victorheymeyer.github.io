@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Company Search</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <a href="/projects/watchlist-jobs/index.html" class="back-link">&larr; Back to Watchlist Jobs</a>
+  <h1>Company Search</h1>
+  <div class="sub" id="sub">Loading...</div>
+
+  <div id="errBox"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel" id="searchPanel" style="display:none">
+    <h2>Find a company's ATS + slug</h2>
+    <p class="hint">Search by company name. Results show which applicant tracking system they use and the slug needed to pull their job board.</p>
+    <div class="controls">
+      <input type="text" id="search" placeholder="Search company name (e.g. Anthropic)" autofocus>
+      <select id="atsSel"><option value="">All ATS</option></select>
+    </div>
+    <div id="count" class="hint"></div>
+    <table>
+      <thead>
+        <tr><th style="width:260px">Company</th><th style="width:140px">ATS</th><th>Slug</th><th style="width:70px">Link</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="loading" id="loading">Connecting to Supabase...</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+// Anon key: safe to expose client-side. Read access only, gated by the
+// "Public read access" RLS policy on ats_company_directory (select-only).
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+const state = { search: "", ats: "", atsList: [], total: 0 };
+let searchTimer = null;
+
+function showError(msg) {
+  document.getElementById("errBox").innerHTML =
+    '<div class="err"><strong>Could not load data.</strong><br>' + msg +
+    '<br><br>If this is a permissions error, make sure the "Public read access" RLS policy on <code>ats_company_directory</code> exists and RLS is enabled with that policy attached.</div>';
+}
+
+function card(n, l) {
+  return '<div class="card"><div class="n">' + Number(n).toLocaleString() + '</div><div class="l">' + l + '</div></div>';
+}
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function init() {
+  try {
+    const { count, error: e1 } = await supabaseClient
+      .from("ats_company_directory").select("id", { count: "exact", head: true });
+    if (e1) throw e1;
+    state.total = count || 0;
+
+    const { data: atsRows, error: e2 } = await supabaseClient
+      .from("ats_company_directory").select("ats");
+    if (e2) throw e2;
+    state.atsList = Array.from(new Set((atsRows || []).map(r => r.ats))).sort();
+
+    document.getElementById("sub").textContent =
+      state.total.toLocaleString() + " companies across " + state.atsList.length + " ATS platforms";
+    document.getElementById("cards").innerHTML =
+      card(state.total, "Companies") + card(state.atsList.length, "ATS platforms");
+
+    const sel = document.getElementById("atsSel");
+    sel.innerHTML = '<option value="">All ATS</option>' +
+      state.atsList.map(a => '<option value="' + esc(a) + '">' + esc(a) + '</option>').join("");
+    sel.onchange = () => { state.ats = sel.value; runSearch(); };
+
+    document.getElementById("search").oninput = (e) => {
+      state.search = e.target.value;
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(runSearch, 250);
+    };
+
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("searchPanel").style.display = "block";
+    document.getElementById("count").textContent = "Type a company name above to search.";
+  } catch (err) {
+    document.getElementById("loading").style.display = "none";
+    showError((err && err.message) ? err.message : String(err));
+    console.error(err);
+  }
+}
+
+async function runSearch() {
+  const term = state.search.trim();
+  const tbody = document.getElementById("tbody");
+  const countEl = document.getElementById("count");
+
+  if (!term) {
+    tbody.innerHTML = "";
+    countEl.textContent = "Type a company name above to search.";
+    return;
+  }
+
+  try {
+    let q = supabaseClient.from("ats_company_directory")
+      .select("company,ats,slug,url")
+      .ilike("company", "%" + term + "%")
+      .order("company", { ascending: true })
+      .limit(50);
+    if (state.ats) q = q.eq("ats", state.ats);
+
+    const { data, error } = await q;
+    if (error) throw error;
+
+    countEl.textContent = data.length + (data.length === 50 ? "+ matches (showing first 50)" : " match" + (data.length === 1 ? "" : "es"));
+    tbody.innerHTML = data.map(r =>
+      '<tr>' +
+        '<td class="company">' + esc(r.company) + '</td>' +
+        '<td>' + esc(r.ats) + '</td>' +
+        '<td>' + esc(r.slug) + '</td>' +
+        '<td>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">view</a>' : "") + '</td>' +
+      '</tr>'
+    ).join("");
+  } catch (err) {
+    showError((err && err.message) ? err.message : String(err));
+    console.error(err);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
