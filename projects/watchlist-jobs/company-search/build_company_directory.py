@@ -39,7 +39,7 @@ ATS_FILES = {
     "greenhouse": "greenhouse.csv",
     "icims": "icims.csv",
     "jazzhr": "jazzhr.csv",
-    "joincom": "joincom.csv",
+    "join_com": "join_com.csv",
     "lever": "lever.csv",
     "personio": "personio.csv",
     "pinpoint": "pinpoint.csv",
@@ -54,7 +54,10 @@ ATS_FILES = {
     "workday": "workday.csv",
     "mercor": "mercor.csv",
     "oracle": "oracle.csv",
-    "phenom": "phenom.csv",
+    # phenom.csv intentionally excluded: it uses a different schema
+    # (url,name,company_code,locale,country) with no usable slug column
+    # (company_code is blank for every current row), so there's nothing
+    # to key a search on. Revisit if the source file adds real slugs.
 }
 
 
