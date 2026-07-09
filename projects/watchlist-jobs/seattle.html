@@ -223,9 +223,11 @@ async function init() {
     state.snapshotDate = latest[0].snapshot_date;
     state.earliestDate = earliest && earliest.length ? earliest[0].snapshot_date : state.snapshotDate;
 
-    // all rows for the latest snapshot
+    // all rows for Seattle for the latest snapshot
     state.rows = await fetchAllRows("jobs_location_flags", LIST_COLUMNS, (q) =>
-      q.eq("snapshot_date", state.snapshotDate).order("watchlist_company", { ascending: true }).order("title", { ascending: true })
+      q.eq("snapshot_date", state.snapshotDate)
+       .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
+       .order("watchlist_company", { ascending: true }).order("title", { ascending: true })
     );
 
     document.getElementById("loading").style.display = "none";
