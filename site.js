@@ -3,12 +3,11 @@
 // this script picks up the change automatically. Paths are absolute from the
 // domain root, so they work from any page depth.
 (function () {
-  const BRAND = { label: "victorheymeyer", href: "/" };
+  const BRAND = { label: "Heymeyer.com", href: "/" };
   const SITE_NAV = [
-    { label: "Home", href: "/" },
     { label: "Seattle Jobs", href: "/projects/watchlist-jobs/" },
-    { label: "LLM Pricing", href: "/projects/llm-data/" },
-    { label: "Airbnb Jobs", href: "/projects/airbnb-jobs/" }
+    { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },
+
   ];
 
   // Treat "/x", "/x/", and "/x/index.html" as the same path for active-link matching.
