@@ -88,26 +88,32 @@ function showError(msg) {
 }
 
 async function fetchAllRows(table, selectCols, applyFilters) {
-  const pageSize = 1000;
+  // Requested page size. Supabase caps rows-per-request server-side
+  // (Project Settings > API > Max Rows, default 1000) and silently clamps
+  // anything larger than that cap, so we detect the REAL per-request size
+  // from what the first response actually contains rather than assuming
+  // this number was honored. That keeps pagination correct whether or not
+  // the server-side cap has been raised to match.
+  const requestedPageSize = 10000;
   function buildQuery(withCount) {
     let q = supabaseClient.from(table).select(selectCols, withCount ? { count: "exact" } : undefined);
     if (applyFilters) q = applyFilters(q);
     return q;
   }
 
-  // First page tells us the exact total row count, so we know how many more
-  // pages exist and can fire them all in parallel instead of paging one
-  // sequential round trip at a time.
-  const first = await buildQuery(true).range(0, pageSize - 1);
+  // First page tells us the exact total row count and the real per-request
+  // cap, so we know how many more pages exist and can fire them all in
+  // parallel instead of paging one sequential round trip at a time.
+  const first = await buildQuery(true).range(0, requestedPageSize - 1);
   if (first.error) throw first.error;
   let all = first.data || [];
   const total = first.count != null ? first.count : all.length;
+  const actualPageSize = all.length > 0 ? all.length : requestedPageSize;
 
-  const remainingPages = Math.max(0, Math.ceil(total / pageSize) - 1);
-  if (remainingPages > 0) {
+  if (all.length < total) {
     const requests = [];
-    for (let p = 1; p <= remainingPages; p++) {
-      requests.push(buildQuery(false).range(p * pageSize, (p + 1) * pageSize - 1));
+    for (let from = all.length; from < total; from += actualPageSize) {
+      requests.push(buildQuery(false).range(from, from + actualPageSize - 1));
     }
     const results = await Promise.all(requests);
     for (const r of results) {
