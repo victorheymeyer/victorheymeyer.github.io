@@ -155,3 +155,11 @@ td a:hover { text-decoration: underline; }
 .home footer .container { padding-top: var(--sp-16); padding-bottom: var(--sp-16); }
 .home footer a { color: inherit; text-decoration: none; }
 .home footer a:hover { text-decoration: underline; }
+
+@media (max-width: 600px) {
+  .wrap th, .wrap td { padding-left: 6px; padding-right: 6px; }
+  .wrap th:nth-child(1), .wrap td:nth-child(1) { width: 84px !important; }   /* Company */
+  .wrap th:nth-child(3), .wrap td:nth-child(3) { width: 100px !important; }  /* Location */
+  .wrap th:nth-child(4), .wrap td:nth-child(4) { width: 44px !important; }   /* Days old */
+  .wrap th:nth-child(5), .wrap td:nth-child(5) { width: 44px !important; }   /* Link */
+}
