@@ -1,25 +1,2 @@
-name: Company Directory Monthly
-
-on:
-  schedule:
-    - cron: "0 9 1 * *"   # 09:00 UTC on the 1st of each month
-  workflow_dispatch:        # lets you run it manually from the Actions tab
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: pip install -r projects/watchlist-jobs/company-search/requirements.txt
-
-      - name: Build company directory
-        env:
-          JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
-          JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
-        run: python projects/watchlist-jobs/company-search/build_company_directory.py
+httpx
+supabase
