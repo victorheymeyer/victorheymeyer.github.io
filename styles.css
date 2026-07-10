@@ -72,6 +72,11 @@ h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
 .site-nav a.navlink.active { color: var(--text); border-bottom-color: var(--accent); }
 .site-nav a.navright { margin-left: auto; color: var(--accent); }
 
+/* ---- Shared site footer (non-home pages) ---- */
+.site-footer { border-top: 1px solid var(--border); color: var(--muted); font-size: var(--fs-sm); margin-top: var(--sp-24); padding-top: var(--sp-16); padding-bottom: var(--sp-16); }
+.site-footer a { color: inherit; text-decoration: none; }
+.site-footer a:hover { text-decoration: underline; }
+
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-12); margin-bottom: var(--sp-22); }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-14) var(--sp-16); }
 .card .n { font-size: var(--fs-2xl); font-weight: 600; }
