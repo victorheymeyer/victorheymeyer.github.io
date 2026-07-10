@@ -553,6 +553,10 @@ def main():
     sb.rpc("refresh_location_flags").execute()
     print("  refresh_location_flags done")
 
+    print("Nulling descriptions for non-nsj jobs...")
+    sb.table("job_content").update({"description": None}).eq("seattle_and_remote", False).execute()
+    print("  done")
+
     print("Pruning old raw snapshots...")
     RETENTION_DAYS = 60
     cutoff_date = (datetime.now(timezone.utc).date() - timedelta(days=RETENTION_DAYS)).isoformat()
