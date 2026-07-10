@@ -5,7 +5,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from jobhive.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper
@@ -552,6 +552,12 @@ def main():
     print("Refreshing location flags...")
     sb.rpc("refresh_location_flags").execute()
     print("  refresh_location_flags done")
+
+    print("Pruning old raw snapshots...")
+    RETENTION_DAYS = 60
+    cutoff_date = (datetime.now(timezone.utc).date() - timedelta(days=RETENTION_DAYS)).isoformat()
+    sb.table("raw_watchlist_jobs").delete().lt("snapshot_date", cutoff_date).execute()
+    print(f"  raw_watchlist_jobs: pruned snapshots older than {cutoff_date}")
 
     fact_count = sb.table("raw_watchlist_jobs").select("ats_id", count="exact") \
         .eq("snapshot_date", snapshot_date).limit(1).execute().count

@@ -5,9 +5,8 @@
 (function () {
   const BRAND = { label: "Jobs Home", href: "/projects/watchlist-jobs/" };
   const SITE_NAV = [
-    { label: " Seattle", href: "/projects/watchlist-jobs/seattle.html" },
-    { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },
-
+    { label: "Seattle", href: "/projects/watchlist-jobs/seattle.html" },
+    { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" }
   ];
 
   // Treat "/x", "/x/", and "/x/index.html" as the same path for active-link matching.
@@ -35,6 +34,13 @@
     if (normalize(item.href) === here) a.classList.add("active");
     inner.appendChild(a);
   });
+
+  // Right-aligned external link.
+  const right = document.createElement("a");
+  right.className = "navlink navright";
+  right.href = "https://heymeyer.com";
+  right.textContent = "heymeyer.com";
+  inner.appendChild(right);
 
   nav.appendChild(inner);
 

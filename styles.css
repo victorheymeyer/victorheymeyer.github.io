@@ -70,6 +70,7 @@ h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
 .site-nav a.navlink { color: var(--muted); text-decoration: none; font-size: var(--fs-base); padding: var(--sp-4) var(--sp-2); border-bottom: 2px solid transparent; }
 .site-nav a.navlink:hover { color: var(--text); }
 .site-nav a.navlink.active { color: var(--text); border-bottom-color: var(--accent); }
+.site-nav a.navright { margin-left: auto; color: var(--accent); }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-12); margin-bottom: var(--sp-22); }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-14) var(--sp-16); }
