@@ -553,8 +553,12 @@ def main():
     sb.rpc("refresh_location_flags").execute()
     print("  refresh_location_flags done")
 
-    print("Nulling descriptions for non-nsj jobs...")
+    print("Clearing descriptions for non-Seattle jobs...")
     sb.table("job_content").update({"description": None}).eq("seattle_and_remote", False).execute()
+    print("  done")
+
+    print("Clearing raw backup data for non-Seattle jobs (today's snapshot)...")
+    sb.rpc("null_non_seattle_raw", {"run_date": snapshot_date}).execute()
     print("  done")
 
     print("Pruning old raw snapshots...")
