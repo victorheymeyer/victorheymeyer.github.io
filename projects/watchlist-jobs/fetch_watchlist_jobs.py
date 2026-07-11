@@ -554,7 +554,7 @@ def main():
     print("  refresh_location_flags done")
 
     print("Clearing descriptions for non-Seattle jobs...")
-    sb.table("job_content").update({"description": None}).eq("seattle_and_remote", False).execute()
+    sb.rpc("null_non_seattle_description").execute()
     print("  done")
 
     print("Clearing raw backup data for non-Seattle jobs (today's snapshot)...")
