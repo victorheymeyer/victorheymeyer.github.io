@@ -19,7 +19,7 @@
 
   <div class="panel" id="listPanel" style="display:none">
     <div class="controls">
-      <input type="text" id="search" placeholder="Search title, company, or location">
+      <input type="text" id="search" placeholder="Search title, company, location, or department">
       <select id="companySel"><option value="">All companies</option></select>
       <div class="msdd" id="disciplineDD"></div>
       <div class="msdd" id="roleDD"></div>
@@ -31,7 +31,7 @@
     <div id="count" class="hint"></div>
     <table>
       <thead>
-        <tr><th style="width:140px">Company</th><th>Title</th><th style="width:200px">Location</th><th style="width:90px" title="Based on first posted date (ATS ID)">Days old</th><th style="width:70px">Link</th></tr>
+        <tr><th style="width:140px">Company</th><th>Title</th><th style="width:200px">Department</th><th style="width:90px" title="Based on first posted date (ATS ID)">Days old</th><th style="width:70px">Link</th></tr>
       </thead>
       <tbody id="tbody"></tbody>
     </table>
@@ -418,7 +418,7 @@ function applyFilters() {
       if (!ok) return false;
     }
     if (q) {
-      const hay = ((r.title || "") + " " + (r.watchlist_company || "") + " " + (r.location || "")).toLowerCase();
+      const hay = ((r.title || "") + " " + (r.watchlist_company || "") + " " + (r.location || "") + " " + (r.department || "")).toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -458,7 +458,7 @@ function renderTable() {
     tr.innerHTML =
       '<td class="company">' + esc(r.watchlist_company) + '</td>' +
       '<td title="' + esc(r.title || "") + '">' + esc(r.title || "(no title)") + badges + '</td>' +
-      '<td class="loc" title="' + esc(r.location || "") + '">' + esc(r.location || "") + '</td>' +
+      '<td class="loc" title="' + esc(r.department || "") + '">' + esc(r.department || "") + '</td>' +
       '<td class="loc">' + (dOld == null ? "-" : dOld) + '</td>' +
       '<td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
     tr.onclick = () => toggleRow(key, r, tr);
