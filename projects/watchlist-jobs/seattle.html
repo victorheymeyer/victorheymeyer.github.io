@@ -275,9 +275,13 @@ function render() {
 
   // company dropdown
   const sel = document.getElementById("companySel");
-  const companies = Array.from(new Set(state.rows.map(r => r.watchlist_company))).sort();
+  const companyNames = new Map();
+  state.rows.forEach(r => {
+    if (!companyNames.has(r.watchlist_company)) companyNames.set(r.watchlist_company, r.display_name || r.watchlist_company);
+  });
+  const companies = Array.from(companyNames.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   sel.innerHTML = '<option value="">All companies</option>' +
-    companies.map(c => '<option value="' + c + '">' + c + '</option>').join("");
+    companies.map(([slug, name]) => '<option value="' + esc(slug) + '">' + esc(name) + '</option>').join("");
 
   // classifier multi-selects (OR within a dropdown, AND across dropdowns; "(unclassified)" matches nulls)
   buildMultiSelect("disciplineDD", "discipline", "discipline", "All disciplines");
@@ -345,7 +349,11 @@ function buildMultiSelect(containerId, dataField, filterKey, allLabel) {
 let chartGeom = [];
 function drawChart() {
   const counts = {};
-  state.rows.forEach(r => { counts[r.watchlist_company] = (counts[r.watchlist_company] || 0) + 1; });
+  const names = {};
+  state.rows.forEach(r => {
+    counts[r.watchlist_company] = (counts[r.watchlist_company] || 0) + 1;
+    if (!names[r.watchlist_company]) names[r.watchlist_company] = r.display_name || r.watchlist_company;
+  });
   const data = Object.entries(counts).sort((a, b) => b[1] - a[1]);
 
   const canvas = document.getElementById("chart");
@@ -372,7 +380,7 @@ function drawChart() {
     const cy = y + rowH / 2;
     ctx.fillStyle = "#9aa3b2";
     ctx.textAlign = "right";
-    ctx.fillText(company, labelW - 8, cy);
+    ctx.fillText(names[company], labelW - 8, cy);
 
     const w = Math.max(2, (n / max) * barAreaW);
     ctx.fillStyle = company === state.filters.company ? "#7db4ff" : "#4f9cff";
