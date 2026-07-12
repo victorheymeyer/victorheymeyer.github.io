@@ -66,7 +66,7 @@ const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 
 const LIST_COLUMNS = [
-  "snapshot_date","watchlist_company","ats_id","ats_type","title","location",
+  "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
   "department","employment_type","salary_min","salary_max","salary_currency",
   "posted_at","url","apply_url","maybe_wa","maybe_remote_wa",
   "discipline","role_keyword","level"
@@ -456,7 +456,7 @@ function renderTable() {
     const tr = document.createElement("tr");
     tr.className = "jobrow";
     tr.innerHTML =
-      '<td class="company">' + esc(r.watchlist_company) + '</td>' +
+      '<td class="company">' + esc(r.display_name || r.watchlist_company) + '</td>' +
       '<td title="' + esc(r.title || "") + '">' + esc(r.title || "(no title)") + badges + '</td>' +
       '<td class="loc" title="' + esc(r.department || "") + '">' + esc(r.department || "") + '</td>' +
       '<td class="loc">' + (dOld == null ? "-" : dOld) + '</td>' +
