@@ -1,2 +1,3 @@
 jobhive-py
+beautifulsoup4
 supabase

@@ -66,7 +66,8 @@ const state = {
   filters: { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [] },
   page: 1,
   pageSize: 10,
-  expanded: null
+  expanded: null,
+  fullyLoaded: false
 };
 
 // ---- Helpers ----
@@ -230,14 +231,31 @@ async function init() {
     if (!latest || !latest.length) { showError("No rows found in jobs_location_flags."); return; }
     state.snapshotDate = latest[0].snapshot_date;
 
-    // all rows for Seattle for the latest snapshot
+    // Quick first paint: pull just enough rows (in the same newest-first order
+    // renderTable defaults to) to fill the first page, so the table shows
+    // something in one small round trip instead of waiting on the full,
+    // multi-thousand-row fetch below. Filters/counts/other pages aren't
+    // reliable until the full set lands, so we flag that with fullyLoaded.
+    const quick = await supabaseClient.from("jobs_location_flags").select(LIST_COLUMNS)
+      .eq("snapshot_date", state.snapshotDate)
+      .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
+      .order("posted_at", { ascending: false, nullsFirst: false })
+      .limit(state.pageSize);
+    if (quick.error) throw quick.error;
+    state.rows = quick.data || [];
+    state.fullyLoaded = false;
+    document.getElementById("loading").style.display = "none";
+    render();
+
+    // Full set for the latest snapshot, loaded in the background so filters,
+    // the company/classifier dropdowns, and pagination beyond page 1 become
+    // accurate a moment later without blocking the initial paint above.
     state.rows = await fetchAllRows("jobs_location_flags", LIST_COLUMNS, (q) =>
       q.eq("snapshot_date", state.snapshotDate)
        .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
        .order("watchlist_company", { ascending: true }).order("title", { ascending: true })
     );
-
-    document.getElementById("loading").style.display = "none";
+    state.fullyLoaded = true;
     render();
   } catch (err) {
     document.getElementById("loading").style.display = "none";
@@ -250,7 +268,8 @@ async function init() {
 function render() {
   document.getElementById("sub").textContent =
     "As of " + daysAgoLabel(state.snapshotDate) + " (" + fmtDateLong(state.snapshotDate) + ") | " + state.rows.length.toLocaleString() + " open roles across " +
-    new Set(state.rows.map(r => r.watchlist_company)).size + " companies";
+    new Set(state.rows.map(r => r.watchlist_company)).size + " companies" +
+    (state.fullyLoaded ? "" : " (loading full list for filtering/paging…)");
 
   // company dropdown
   const sel = document.getElementById("companySel");
