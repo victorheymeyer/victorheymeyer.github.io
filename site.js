@@ -6,7 +6,8 @@
   const BRAND = { label: "Jobs Home", href: "/projects/watchlist-jobs/" };
   const SITE_NAV = [
     { label: "Seattle", href: "/projects/watchlist-jobs/seattle.html" },
-    { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" }
+    { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },
+    { label: "Stats", href: "/projects/watchlist-jobs/stats/index.html" }
   ];
 
   // Treat "/x", "/x/", and "/x/index.html" as the same path for active-link matching.

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stats</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>Stats</h1>
+  <div class="sub">Dashboards and reference data for the watchlist jobs project.</div>
+
+  <div id="errBox"></div>
+
+  <div id="sections"></div>
+
+  <footer class="site-footer">
+    <p>© 2026 Victor Heymeyer | Seattle, WA |<a href="https://www.linkedin.com/in/heymeyer/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> </p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+// One entry per page in this stats/ folder. Add a new entry (title, href,
+// desc, and a load() that returns [{label, value}, ...]) when a new
+// stats subpage is added; the section renders itself from that.
+const SECTIONS = [
+  {
+    title: "Watchlist Companies",
+    href: "watchlist.html",
+    desc: "Every company on the watchlist, its ATS, slug, and active status.",
+    load: async () => {
+      const { data, error } = await supabaseClient
+        .from("watchlist_companies")
+        .select("ats,active");
+      if (error) throw error;
+      const rows = data || [];
+      const active = rows.filter(r => r.active).length;
+      const atsCount = new Set(rows.map(r => r.ats).filter(Boolean)).size;
+      return [
+        { label: "Companies", value: rows.length },
+        { label: "Active", value: active },
+        { label: "Inactive", value: rows.length - active },
+        { label: "ATS", value: atsCount },
+      ];
+    }
+  }
+];
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function showError(msg) {
+  document.getElementById("errBox").innerHTML =
+    '<div class="err"><strong>Could not load data.</strong><br>' + msg + '</div>';
+}
+
+function statCard(label, value) {
+  return '<div class="card"><div class="n">' + Number(value).toLocaleString() + '</div><div class="l">' + esc(label) + '</div></div>';
+}
+
+async function renderSection(section) {
+  const panel = document.createElement("div");
+  panel.className = "panel";
+  panel.innerHTML =
+    '<h2><a href="' + esc(section.href) + '">' + esc(section.title) + '</a></h2>' +
+    '<p class="hint">' + esc(section.desc) + '</p>' +
+    '<div class="cards stat-loading">Loading stats...</div>';
+  document.getElementById("sections").appendChild(panel);
+
+  const statsEl = panel.querySelector(".cards");
+  try {
+    const stats = await section.load();
+    statsEl.classList.remove("stat-loading");
+    statsEl.textContent = "";
+    statsEl.innerHTML = stats.map(s => statCard(s.label, s.value)).join("");
+  } catch (err) {
+    statsEl.textContent = "";
+    showError((err && err.message) ? err.message : String(err));
+  }
+}
+
+SECTIONS.forEach(renderSection);
+</script>
+</body>
+</html>

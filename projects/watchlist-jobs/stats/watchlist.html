@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watchlist Companies</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>Watchlist Companies</h1>
+  <div class="sub" id="sub">Loading...</div>
+
+  <div id="errBox"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel" id="listPanel" style="display:none">
+    <h2>Companies</h2>
+    <p class="hint">Every company on the watchlist, the ATS it's scraped from, its slug, and whether it's currently active.</p>
+    <div class="controls">
+      <input type="text" id="search" placeholder="Search company or slug">
+      <select id="atsSel"><option value="">All ATS</option></select>
+      <select id="statusSel">
+        <option value="">All statuses</option>
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+      </select>
+      <button class="clearbtn" id="clearBtn">Clear</button>
+    </div>
+    <div id="count" class="hint"></div>
+    <table>
+      <thead>
+        <tr><th>Company</th><th style="width:140px">ATS</th><th>Slug</th><th style="width:100px">Status</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="loading" id="loading">Connecting to Supabase...</div>
+
+  <footer class="site-footer">
+    <p>© 2026 Victor Heymeyer | Seattle, WA |<a href="https://www.linkedin.com/in/heymeyer/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> </p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+// Anon key: safe to expose client-side. Read access only, gated by the
+// "Public read access" RLS policy on watchlist_companies (select-only).
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+const state = { rows: [], search: "", ats: "", status: "" };
+
+function showError(msg) {
+  document.getElementById("errBox").innerHTML =
+    '<div class="err"><strong>Could not load data.</strong><br>' + msg +
+    '<br><br>If this is a permissions error, remember both the RLS <code>select</code> policy for <code>anon</code> AND the table <code>GRANT</code> are needed for reads.</div>';
+}
+
+function card(n, l) {
+  return '<div class="card"><div class="n">' + Number(n).toLocaleString() + '</div><div class="l">' + l + '</div></div>';
+}
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function init() {
+  try {
+    const { data, error } = await supabaseClient
+      .from("watchlist_companies")
+      .select("company,ats,slug,active")
+      .order("company", { ascending: true })
+      .limit(5000);
+    if (error) throw error;
+    state.rows = data || [];
+
+    const activeCount = state.rows.filter(r => r.active).length;
+    const atsList = Array.from(new Set(state.rows.map(r => r.ats).filter(Boolean))).sort();
+
+    document.getElementById("sub").textContent =
+      state.rows.length.toLocaleString() + " companies on the watchlist across " + atsList.length + " ATS platforms";
+    document.getElementById("cards").innerHTML =
+      card(state.rows.length, "Companies") +
+      card(activeCount, "Active") +
+      card(state.rows.length - activeCount, "Inactive") +
+      card(atsList.length, "ATS platforms");
+
+    const atsSel = document.getElementById("atsSel");
+    atsSel.innerHTML = '<option value="">All ATS</option>' +
+      atsList.map(a => '<option value="' + esc(a) + '">' + esc(a) + '</option>').join("");
+
+    wireControls();
+
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("listPanel").style.display = "block";
+    renderTable();
+  } catch (err) {
+    document.getElementById("loading").style.display = "none";
+    showError((err && err.message) ? err.message : String(err));
+    console.error(err);
+  }
+}
+
+function applyFilters() {
+  const q = state.search.trim().toLowerCase();
+  return state.rows.filter(r => {
+    if (state.ats && r.ats !== state.ats) return false;
+    if (state.status === "active" && !r.active) return false;
+    if (state.status === "inactive" && r.active) return false;
+    if (q) {
+      const hay = ((r.company || "") + " " + (r.slug || "")).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderTable() {
+  const filtered = applyFilters();
+  document.getElementById("count").textContent =
+    filtered.length.toLocaleString() + " compan" + (filtered.length === 1 ? "y" : "ies") + " matched";
+
+  document.getElementById("tbody").innerHTML = filtered.map(r =>
+    '<tr>' +
+      '<td class="company">' + esc(r.company) + '</td>' +
+      '<td>' + esc(r.ats) + '</td>' +
+      '<td>' + esc(r.slug) + '</td>' +
+      '<td>' + (r.active
+        ? '<span class="badge wa">Active</span>'
+        : '<span class="badge">Inactive</span>') + '</td>' +
+    '</tr>'
+  ).join("");
+}
+
+function wireControls() {
+  const search = document.getElementById("search");
+  search.oninput = () => { state.search = search.value; renderTable(); };
+  const atsSel = document.getElementById("atsSel");
+  atsSel.onchange = () => { state.ats = atsSel.value; renderTable(); };
+  const statusSel = document.getElementById("statusSel");
+  statusSel.onchange = () => { state.status = statusSel.value; renderTable(); };
+  document.getElementById("clearBtn").onclick = () => {
+    state.search = ""; state.ats = ""; state.status = "";
+    search.value = ""; atsSel.value = ""; statusSel.value = "";
+    renderTable();
+  };
+}
+
+init();
+</script>
+</body>
+</html>
