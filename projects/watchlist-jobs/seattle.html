@@ -178,6 +178,17 @@ function fmtDate(d) {
   return dt.toISOString().slice(0, 10);
 }
 
+const MONTH_NAMES = ["January","February","March","April","May","June",
+  "July","August","September","October","November","December"];
+// Parses a "YYYY-MM-DD" date string directly (no Date object) so the
+// displayed day can't shift due to local-timezone conversion.
+function fmtDateLong(d) {
+  if (!d) return "";
+  const [y, m, day] = String(d).slice(0, 10).split("-").map(Number);
+  if (!y || !m || !day) return d;
+  return MONTH_NAMES[m - 1] + " " + day + ", " + y;
+}
+
 // Days since posted_at (the source's claim). Returns null when posted_at is absent or unparseable.
 function daysOld(posted) {
   if (!posted) return null;
@@ -224,7 +235,7 @@ async function init() {
 // ---- Render ----
 function render() {
   document.getElementById("sub").textContent =
-    "Snapshot " + fmtDate(state.snapshotDate) + " | " + state.rows.length.toLocaleString() + " open roles across " +
+    "As of today (" + fmtDateLong(state.snapshotDate) + ") | " + state.rows.length.toLocaleString() + " open roles across " +
     new Set(state.rows.map(r => r.watchlist_company)).size + " companies";
 
   // company dropdown
