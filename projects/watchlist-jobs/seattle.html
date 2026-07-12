@@ -189,6 +189,20 @@ function fmtDateLong(d) {
   return MONTH_NAMES[m - 1] + " " + day + ", " + y;
 }
 
+// "today" / "1 day ago" / "N days ago", comparing the snapshot date against
+// the viewer's local calendar date (not the server's or UTC's).
+function daysAgoLabel(d) {
+  if (!d) return "";
+  const [y, m, day] = String(d).slice(0, 10).split("-").map(Number);
+  if (!y || !m || !day) return "";
+  const snapshotUTC = Date.UTC(y, m - 1, day);
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((todayUTC - snapshotUTC) / 86400000);
+  if (diff <= 0) return "today";
+  return diff + (diff === 1 ? " day ago" : " days ago");
+}
+
 // Days since posted_at (the source's claim). Returns null when posted_at is absent or unparseable.
 function daysOld(posted) {
   if (!posted) return null;
@@ -235,7 +249,7 @@ async function init() {
 // ---- Render ----
 function render() {
   document.getElementById("sub").textContent =
-    "As of today (" + fmtDateLong(state.snapshotDate) + ") | " + state.rows.length.toLocaleString() + " open roles across " +
+    "As of " + daysAgoLabel(state.snapshotDate) + " (" + fmtDateLong(state.snapshotDate) + ") | " + state.rows.length.toLocaleString() + " open roles across " +
     new Set(state.rows.map(r => r.watchlist_company)).size + " companies";
 
   // company dropdown
