@@ -38,17 +38,6 @@
     <div class="pager" id="pager"></div>
   </div>
 
-  <div class="panel" id="chartPanel" style="display:none">
-    <h2>Openings by company</h2>
-    <p class="hint">Click a bar to filter the list above to that company.</p>
-    <div id="chartWrap"><canvas id="chart"></canvas></div>
-  </div>
-
-  <div class="panel" id="freshnessPanel" style="display:none">
-    <h2>Freshness signals</h2>
-    <p class="hint" id="freshnessHint"></p>
-  </div>
-
   <div class="loading" id="loading">Connecting to Supabase...</div>
 
   <footer class="site-footer">
@@ -75,8 +64,6 @@ const LIST_COLUMNS = [
 const state = {
   rows: [],
   snapshotDate: null,
-  earliestDate: null,
-  dayCount: 0,
   descCache: {},
   filters: { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [] },
   page: 1,
@@ -214,18 +201,11 @@ function fmtSalary(r) {
 // ---- Data load ----
 async function init() {
   try {
-    // latest and earliest snapshot dates, fetched in parallel instead of
-    // as two sequential round trips
-    const [{ data: latest, error: e1 }, { data: earliest }] = await Promise.all([
-      supabaseClient.from("jobs_location_flags").select("snapshot_date")
-        .order("snapshot_date", { ascending: false }).limit(1),
-      supabaseClient.from("jobs_location_flags").select("snapshot_date")
-        .order("snapshot_date", { ascending: true }).limit(1)
-    ]);
+    const { data: latest, error: e1 } = await supabaseClient.from("jobs_location_flags").select("snapshot_date")
+      .order("snapshot_date", { ascending: false }).limit(1);
     if (e1) throw e1;
     if (!latest || !latest.length) { showError("No rows found in jobs_location_flags."); return; }
     state.snapshotDate = latest[0].snapshot_date;
-    state.earliestDate = earliest && earliest.length ? earliest[0].snapshot_date : state.snapshotDate;
 
     // all rows for Seattle for the latest snapshot
     state.rows = await fetchAllRows("jobs_location_flags", LIST_COLUMNS, (q) =>
@@ -243,12 +223,6 @@ async function init() {
   }
 }
 
-function dayCount() {
-  const a = new Date(state.earliestDate), b = new Date(state.snapshotDate);
-  const days = Math.round((b - a) / 86400000) + 1;
-  return isNaN(days) ? 1 : days;
-}
-
 // ---- Render ----
 function render() {
   document.getElementById("sub").textContent =
@@ -263,15 +237,6 @@ function render() {
     card(new Set(state.rows.map(r => r.watchlist_company)).size, "Companies") +
     card(wa, "WA Jobs") +
     card(rem, "Remote-WA Jobs");
-
-  // freshness
-  const days = dayCount();
-  document.getElementById("freshnessPanel").style.display = "block";
-  document.getElementById("freshnessHint").innerHTML =
-    "History so far: <strong>" + days + (days === 1 ? " day" : " days") + "</strong> (" + fmtDate(state.earliestDate) +
-    " to " + fmtDate(state.snapshotDate) + "). Time signals (how long a role has been open, and whether it was recently edited) " +
-    "become meaningful as snapshots accumulate. With one day of history every role's first-seen is the same date, which is expected, not a bug. " +
-    "The how-long-open and recently-edited views will be added here once several days exist.";
 
   // company dropdown
   const sel = document.getElementById("companySel");
@@ -288,10 +253,8 @@ function render() {
   buildMultiSelect("roleDD", "role_keyword", "role", "All roles");
   buildMultiSelect("levelDD", "level", "level", "All levels");
 
-  document.getElementById("chartPanel").style.display = "block";
   document.getElementById("listPanel").style.display = "block";
 
-  drawChart();
   renderTable();
   wireControls();
 }
@@ -343,67 +306,6 @@ function buildMultiSelect(containerId, dataField, filterKey, allLabel) {
   container._reset = () => {
     panel.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
     updateLabel();
-  };
-}
-
-let chartGeom = [];
-function drawChart() {
-  const counts = {};
-  const names = {};
-  state.rows.forEach(r => {
-    counts[r.watchlist_company] = (counts[r.watchlist_company] || 0) + 1;
-    if (!names[r.watchlist_company]) names[r.watchlist_company] = r.display_name || r.watchlist_company;
-  });
-  const data = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-
-  const canvas = document.getElementById("chart");
-  const rowH = 26, padTop = 6, padBottom = 6, labelW = 130, valW = 60;
-  const cssW = Math.max(700, (document.getElementById("chartWrap").clientWidth || 700));
-  const cssH = padTop + padBottom + data.length * rowH;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.style.width = cssW + "px";
-  canvas.style.height = cssH + "px";
-  canvas.width = cssW * dpr;
-  canvas.height = cssH * dpr;
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, cssW, cssH);
-
-  const max = data.length ? data[0][1] : 1;
-  const barAreaW = cssW - labelW - valW - 12;
-  chartGeom = [];
-
-  ctx.font = "12px -apple-system, Segoe UI, Roboto, sans-serif";
-  ctx.textBaseline = "middle";
-  data.forEach(([company, n], i) => {
-    const y = padTop + i * rowH;
-    const cy = y + rowH / 2;
-    ctx.fillStyle = "#9aa3b2";
-    ctx.textAlign = "right";
-    ctx.fillText(names[company], labelW - 8, cy);
-
-    const w = Math.max(2, (n / max) * barAreaW);
-    ctx.fillStyle = company === state.filters.company ? "#7db4ff" : "#4f9cff";
-    ctx.fillRect(labelW, y + 4, w, rowH - 8);
-
-    ctx.fillStyle = "#e6e8ec";
-    ctx.textAlign = "left";
-    ctx.fillText(n.toLocaleString(), labelW + w + 6, cy);
-
-    chartGeom.push({ company, y, h: rowH });
-  });
-
-  canvas.onclick = (ev) => {
-    const rect = canvas.getBoundingClientRect();
-    const my = ev.clientY - rect.top;
-    const hit = chartGeom.find(g => my >= g.y && my < g.y + g.h);
-    if (hit) {
-      state.filters.company = state.filters.company === hit.company ? "" : hit.company;
-      document.getElementById("companySel").value = state.filters.company;
-      state.page = 1;
-      drawChart();
-      renderTable();
-    }
   };
 }
 
@@ -594,7 +496,7 @@ function wireControls() {
   const search = document.getElementById("search");
   search.oninput = () => { state.filters.search = search.value; state.page = 1; renderTable(); };
   const sel = document.getElementById("companySel");
-  sel.onchange = () => { state.filters.company = sel.value; state.page = 1; drawChart(); renderTable(); };
+  sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); };
   document.getElementById("waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("clearBtn").onclick = () => {
@@ -604,7 +506,7 @@ function wireControls() {
     document.getElementById("waChk").checked = false;
     document.getElementById("remChk").checked = false;
     ["disciplineDD", "roleDD", "levelDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
-    drawChart(); renderTable();
+    renderTable();
   };
   // close any open dropdown when clicking elsewhere
   document.addEventListener("click", () => {
@@ -612,7 +514,6 @@ function wireControls() {
   });
 }
 
-window.addEventListener("resize", () => { if (state.rows.length) drawChart(); });
 init();
 </script>
 </body>
