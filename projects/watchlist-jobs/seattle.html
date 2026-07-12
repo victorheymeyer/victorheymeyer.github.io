@@ -15,8 +15,6 @@
 
   <div id="errBox"></div>
 
-  <div class="cards" id="cards"></div>
-
   <div class="panel" id="listPanel" style="display:none">
     <div class="controls">
       <input type="text" id="search" placeholder="Search title, company, location, or department">
@@ -229,15 +227,6 @@ function render() {
     "Snapshot " + fmtDate(state.snapshotDate) + " | " + state.rows.length.toLocaleString() + " open roles across " +
     new Set(state.rows.map(r => r.watchlist_company)).size + " companies";
 
-  // cards
-  const wa = state.rows.filter(r => r.maybe_wa).length;
-  const rem = state.rows.filter(r => r.maybe_remote_wa).length;
-  document.getElementById("cards").innerHTML =
-    card(state.rows.length, "Open roles") +
-    card(new Set(state.rows.map(r => r.watchlist_company)).size, "Companies") +
-    card(wa, "WA Jobs") +
-    card(rem, "Remote-WA Jobs");
-
   // company dropdown
   const sel = document.getElementById("companySel");
   const companyNames = new Map();
@@ -257,10 +246,6 @@ function render() {
 
   renderTable();
   wireControls();
-}
-
-function card(n, l) {
-  return '<div class="card"><div class="n">' + Number(n).toLocaleString() + '</div><div class="l">' + l + '</div></div>';
 }
 
 const UNCLASSIFIED = "__unclassified__";
