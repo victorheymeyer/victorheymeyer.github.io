@@ -31,7 +31,7 @@
     <div id="count" class="hint"></div>
     <table>
       <thead>
-        <tr><th style="width:140px">Company</th><th>Title</th><th style="width:200px">Department</th><th style="width:90px" title="Based on first posted date (ATS ID)">Days old</th><th style="width:70px">Link</th></tr>
+        <tr><th style="width:140px">Company</th><th>Title</th><th style="width:200px">Department</th><th style="width:90px" title="Based on first posted date. If no posted date, * is based on first seen">Days old*</th><th style="width:70px">Link</th></tr>
       </thead>
       <tbody id="tbody"></tbody>
     </table>
@@ -502,7 +502,7 @@ function renderTable() {
       (r.maybe_wa ? '<span class="badge wa">WA</span>' : "") +
       (r.maybe_remote_wa ? '<span class="badge rem">Remote</span>' : "");
     const age = effectiveAge(r);
-    const daysCell = !age ? "-" : (age.estimated ? "~" + age.days : age.days);
+    const daysCell = !age ? "-" : (age.estimated ? age.days + "*" : age.days);
     const daysTitle = age && age.estimated ? "posted_at unavailable for this source; estimated from first_seen" : "";
     const tr = document.createElement("tr");
     tr.className = "jobrow";
