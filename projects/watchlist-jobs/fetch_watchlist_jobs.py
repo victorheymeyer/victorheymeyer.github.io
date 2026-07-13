@@ -407,11 +407,11 @@ snapshot_date = datetime.now(timezone.utc).date().isoformat()
 
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title", "location",
              "is_remote", "department", "team", "employment_type", "salary_min", "salary_max",
-             "salary_currency", "posted_at", "fetched_at", "url", "apply_url", "raw",
+             "salary_currency", "posted_at", "fetched_at", "url", "apply_url",
              "description_hash"]
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
             "url", "apply_url", "last_seen", "fetched_at", "discipline", "role_keyword",
-            "level"]
+            "level", "raw"]
 
 
 def load_watchlist():
@@ -557,8 +557,8 @@ def main():
     sb.rpc("null_non_seattle_description").execute()
     print("  done")
 
-    print("Clearing raw backup data for non-Seattle jobs (today's snapshot)...")
-    sb.rpc("null_non_seattle_raw", {"run_date": snapshot_date}).execute()
+    print("Clearing raw backup data for non-Seattle jobs...")
+    sb.rpc("null_non_seattle_raw").execute()
     print("  done")
 
     print("Pruning old raw snapshots...")
