@@ -56,7 +56,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
   "department","employment_type","salary_min","salary_max","salary_currency",
-  "posted_at","url","apply_url","maybe_wa","maybe_remote_wa",
+  "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
   "discipline","role_keyword","level"
 ].join(",");
 
@@ -245,6 +245,18 @@ function daysOld(posted) {
   return Math.floor(ms / 86400000);
 }
 
+// Sort/display key when posted_at is missing (e.g. Google's scraper never gets
+// a posted date from the source site). Falls back to first_seen, the date our
+// own pipeline first observed the job — an honest "discovered" signal, not a
+// substitute posted date. Returns {days, estimated} or null if neither exists.
+function effectiveAge(r) {
+  const real = daysOld(r.posted_at);
+  if (real != null) return { days: real, estimated: false };
+  const fallback = daysOld(r.first_seen);
+  if (fallback != null) return { days: fallback, estimated: true };
+  return null;
+}
+
 function fmtSalary(r) {
   if (r.salary_min == null && r.salary_max == null) return "";
   const cur = r.salary_currency || "";
@@ -271,6 +283,7 @@ async function init() {
       .eq("snapshot_date", state.snapshotDate)
       .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
       .order("posted_at", { ascending: false, nullsFirst: false })
+      .order("first_seen", { ascending: false, nullsFirst: false })
       .limit(state.pageSize);
     if (quick.error) throw quick.error;
     state.rows = quick.data || [];
@@ -414,11 +427,11 @@ function applyFilters() {
 function renderTable() {
   const filtered = applyFilters();
   filtered.sort((a, b) => {
-    const da = daysOld(a.posted_at), db = daysOld(b.posted_at);
-    if (da == null && db == null) return 0;
-    if (da == null) return 1;
-    if (db == null) return -1;
-    return da - db;
+    const ea = effectiveAge(a), eb = effectiveAge(b);
+    if (!ea && !eb) return 0;
+    if (!ea) return 1;
+    if (!eb) return -1;
+    return ea.days - eb.days;
   });
   const total = filtered.length;
   const pages = Math.max(1, Math.ceil(total / state.pageSize));
@@ -438,14 +451,16 @@ function renderTable() {
     const badges =
       (r.maybe_wa ? '<span class="badge wa">WA</span>' : "") +
       (r.maybe_remote_wa ? '<span class="badge rem">Remote</span>' : "");
-    const dOld = daysOld(r.posted_at);
+    const age = effectiveAge(r);
+    const daysCell = !age ? "-" : (age.estimated ? "~" + age.days : age.days);
+    const daysTitle = age && age.estimated ? "posted_at unavailable for this source; estimated from first_seen" : "";
     const tr = document.createElement("tr");
     tr.className = "jobrow";
     tr.innerHTML =
       '<td class="company">' + esc(r.display_name || r.watchlist_company) + '</td>' +
       '<td title="' + esc(r.title || "") + '">' + esc(r.title || "(no title)") + badges + '</td>' +
       '<td class="loc" title="' + esc(r.department || "") + '">' + esc(r.department || "") + '</td>' +
-      '<td class="loc">' + (dOld == null ? "-" : dOld) + '</td>' +
+      '<td class="loc" title="' + esc(daysTitle) + '">' + daysCell + '</td>' +
       '<td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
     tr.onclick = () => toggleRow(key, r, tr);
     tbody.appendChild(tr);
