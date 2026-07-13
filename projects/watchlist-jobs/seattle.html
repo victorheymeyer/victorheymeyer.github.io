@@ -467,22 +467,13 @@ async function appendDetail(tbody, key, r) {
   const ats = r.ats_type ? esc(r.ats_type) : "TBD";
   const atsId = esc(r.ats_id || "");
 
-  let salaryStr = "TBD";
-  if (r.salary_min != null || r.salary_max != null) {
-    const cur = r.salary_currency ? esc(r.salary_currency) + " " : "";
-    const mn = r.salary_min != null ? Number(r.salary_min).toLocaleString() : "?";
-    const mx = r.salary_max != null ? Number(r.salary_max).toLocaleString() : "?";
-    salaryStr = cur + mn + " - " + mx;
-  }
-
   const disc = r.discipline ? esc(r.discipline) : "-";
   const roleKw = r.role_keyword ? esc(r.role_keyword) : "-";
   const lvl = r.level ? esc(r.level) : "-";
 
   const meta =
     '<div class="metaline"><span class="lbl">Job Info:</span> Dept: ' + dept +
-      ' | Function (AI): TBD | Salary Range (All locations): ' + salaryStr +
-      ' | Internal Job ID/Req: TBD</div>' +
+      ' | Location: <span class="locval">Loading...</span></div>' +
     '<div class="metaline"><span class="lbl">Classification:</span> Discipline: ' + disc +
       ' | Role: ' + roleKw +
       ' | Level: ' + lvl + '</div>' +
@@ -497,19 +488,22 @@ async function appendDetail(tbody, key, r) {
   tbody.appendChild(tr);
 
   const target = td.querySelector(".desc");
+  const locTarget = td.querySelector(".locval");
   try {
-    let raw = state.descCache[key];
-    if (raw === undefined) {
+    let cached = state.descCache[key];
+    if (cached === undefined) {
       const { data, error } = await supabaseClient
-        .from("job_content").select("description")
+        .from("job_content").select("description, location")
         .eq("watchlist_company", r.watchlist_company).eq("ats_id", r.ats_id).limit(1);
       if (error) throw error;
-      raw = (data && data.length) ? data[0].description : null;
-      state.descCache[key] = raw;
+      cached = (data && data.length) ? { description: data[0].description, location: data[0].location } : { description: null, location: null };
+      state.descCache[key] = cached;
     }
-    if (raw) { target.innerHTML = renderDescription(raw); }
+    if (locTarget) locTarget.textContent = cached.location || "TBD";
+    if (cached.description) { target.innerHTML = renderDescription(cached.description); }
     else { target.textContent = "No description stored for this role."; }
   } catch (err) {
+    if (locTarget) locTarget.textContent = "TBD";
     target.textContent = "Could not load description: " + ((err && err.message) ? err.message : String(err));
   }
 }
