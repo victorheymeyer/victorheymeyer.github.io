@@ -17,6 +17,17 @@
 
   <div class="cards" id="cards"></div>
 
+  <div class="panel" id="atsPanel" style="display:none">
+    <h2>By ATS</h2>
+    <p class="hint">Active and inactive company counts for each ATS platform.</p>
+    <table>
+      <thead>
+        <tr><th>ATS</th><th style="width:100px">Active</th><th style="width:100px">Inactive</th><th style="width:100px">Total</th></tr>
+      </thead>
+      <tbody id="atsTbody"></tbody>
+    </table>
+  </div>
+
   <div class="panel" id="listPanel" style="display:none">
     <h2>Companies</h2>
     <p class="hint">Every company on the watchlist, the ATS it's scraped from, its slug, and whether it's currently active.</p>
@@ -98,6 +109,22 @@ async function init() {
     const atsSel = document.getElementById("atsSel");
     atsSel.innerHTML = '<option value="">All ATS</option>' +
       atsList.map(a => '<option value="' + esc(a) + '">' + esc(a) + '</option>').join("");
+
+    const atsCounts = atsList.map(a => {
+      const rows = state.rows.filter(r => r.ats === a);
+      const active = rows.filter(r => r.active).length;
+      return { ats: a, active: active, inactive: rows.length - active, total: rows.length };
+    }).sort((a, b) => b.total - a.total);
+
+    document.getElementById("atsTbody").innerHTML = atsCounts.map(c =>
+      '<tr>' +
+        '<td>' + esc(c.ats) + '</td>' +
+        '<td>' + c.active.toLocaleString() + '</td>' +
+        '<td>' + c.inactive.toLocaleString() + '</td>' +
+        '<td>' + c.total.toLocaleString() + '</td>' +
+      '</tr>'
+    ).join("");
+    document.getElementById("atsPanel").style.display = "block";
 
     wireControls();
 
