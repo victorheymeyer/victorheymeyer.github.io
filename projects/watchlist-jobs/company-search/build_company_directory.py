@@ -2,8 +2,11 @@
 #
 # Downloads per-ATS company/slug CSVs (source: kalil0321/ats-scrapers on
 # GitHub) and upserts them into a single ats_company_directory table in
-# Supabase, keyed on (ats, slug). Run monthly via the
-# company-directory-monthly.yml workflow, or manually:
+# Supabase, keyed on (ats, slug). Rows for an ATS that no longer appear in
+# that ATS's source CSV are deleted -- but only for ATS sources that fetched
+# successfully and returned at least one row this run, so a failed download
+# or an empty response never wipes out existing data for that ATS. Run
+# monthly via the company-directory-monthly.yml workflow, or manually:
 #
 #   pip install -r requirements.txt
 #   JOBS_SUPABASE_URL=... JOBS_SUPABASE_SERVICE_KEY=... python build_company_directory.py
@@ -89,10 +92,22 @@ def upsert_chunked(rows, size=500):
         print(f"  upserted {min(i + size, len(rows))}/{len(rows)}")
 
 
+def delete_stale(ats, now):
+    result = (
+        sb.table("ats_company_directory")
+        .delete()
+        .eq("ats", ats)
+        .lt("updated_at", now)
+        .execute()
+    )
+    return len(result.data)
+
+
 def main():
     now = datetime.now(timezone.utc).isoformat()
     all_rows = []
     failures = []
+    row_counts = {}
 
     http = httpx.Client(timeout=30, follow_redirects=True)
     try:
@@ -102,6 +117,7 @@ def main():
                 for r in rows:
                     r["updated_at"] = now
                 all_rows.extend(rows)
+                row_counts[ats] = len(rows)
                 print(f"OK   {ats:16s}: {len(rows)} companies")
             except Exception as e:
                 print(f"FAIL {ats:16s}: {type(e).__name__}: {e}")
@@ -123,6 +139,20 @@ def main():
 
     print("Writing ats_company_directory...")
     upsert_chunked(all_rows)
+
+    print("Deleting stale rows for refreshed ATS sources...")
+    total_deleted = 0
+    for ats in ATS_FILES:
+        if ats in failures:
+            continue
+        if row_counts.get(ats, 0) == 0:
+            print(f"  {ats:16s}: skipped deletion (source returned 0 rows)")
+            continue
+        deleted = delete_stale(ats, now)
+        total_deleted += deleted
+        if deleted:
+            print(f"  {ats:16s}: removed {deleted} stale rows")
+    print(f"Removed {total_deleted} stale rows total")
 
     count = sb.table("ats_company_directory").select("id", count="exact").limit(1).execute().count
     print(f"Verification: {count} total rows in ats_company_directory")
