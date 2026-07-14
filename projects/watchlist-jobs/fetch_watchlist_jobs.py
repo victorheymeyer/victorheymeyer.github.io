@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from jobhive.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper
+from jobhive.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper, LeverScraper
 from supabase import create_client
 
 SUPABASE_URL = os.environ["JOBS_SUPABASE_URL"]
@@ -24,6 +24,7 @@ SCRAPERS = {
     "tiktok": TikTokScraper,
     "uber": UberScraper,
     "eightfold": EightfoldScraper,
+    "lever": LeverScraper,
 }
 
 # --- HTML description capture -------------------------------------------------
