@@ -321,6 +321,62 @@ function esc(s) {
 }
 function cssId(s) { return s.replace(/[^a-z0-9]/gi, "_"); }
 
+// ---- Shared data loader ----
+// Every .jobsPanel renders from the same jobs_location_flags snapshot, so
+// fetch it once here and broadcast to whichever panels have subscribed,
+// instead of each panel re-querying Supabase independently (that used to
+// mean ~2MB of JSON fetched and parsed once per panel on this page).
+const QUICK_PAGE_SIZE = 10;
+const sharedData = { rows: [], snapshotDate: null, fullyLoaded: false, error: null };
+const dataListeners = [];
+function onSharedData(fn) {
+  dataListeners.push(fn);
+  if (sharedData.snapshotDate || sharedData.error) fn(sharedData);
+}
+function notifySharedData() {
+  dataListeners.forEach(fn => fn(sharedData));
+}
+
+async function loadSharedData() {
+  try {
+    const { data: latest, error: e1 } = await supabaseClient.from("jobs_location_flags").select("snapshot_date")
+      .order("snapshot_date", { ascending: false }).limit(1);
+    if (e1) throw e1;
+    if (!latest || !latest.length) { sharedData.error = "No rows found in jobs_location_flags."; notifySharedData(); return; }
+    sharedData.snapshotDate = latest[0].snapshot_date;
+
+    // Quick first paint: pull just enough rows (newest-first, same order
+    // renderTable defaults to) to fill the first page, so panels show
+    // something in one small round trip instead of waiting on the full,
+    // multi-thousand-row fetch below. Filters/counts/other pages aren't
+    // reliable until the full set lands, so fullyLoaded flags that.
+    const quick = await supabaseClient.from("jobs_location_flags").select(LIST_COLUMNS)
+      .eq("snapshot_date", sharedData.snapshotDate)
+      .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
+      .order("posted_at", { ascending: false, nullsFirst: false })
+      .order("first_seen", { ascending: false, nullsFirst: false })
+      .limit(QUICK_PAGE_SIZE);
+    if (quick.error) throw quick.error;
+    sharedData.rows = quick.data || [];
+    sharedData.fullyLoaded = false;
+    notifySharedData();
+
+    // Full set for the latest snapshot, loaded in the background so filters,
+    // the company/classifier dropdowns, and pagination beyond page 1 become
+    // accurate a moment later without blocking the initial paint above.
+    sharedData.rows = await fetchAllRows("jobs_location_flags", LIST_COLUMNS, (q) =>
+      q.eq("snapshot_date", sharedData.snapshotDate)
+       .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
+       .order("watchlist_company", { ascending: true }).order("title", { ascending: true })
+    );
+    sharedData.fullyLoaded = true;
+    notifySharedData();
+  } catch (err) {
+    sharedData.error = (err && err.message) ? err.message : String(err);
+    notifySharedData();
+  }
+}
+
 // ---- Panel factory ----
 // Each .jobsPanel element on the page runs an independent copy of this: its
 // own state, filters, and paging, all scoped to that element via $(). Lets
@@ -360,46 +416,16 @@ function initJobsPanel(panelEl) {
   }
 
   // ---- Data load ----
-  async function init() {
-    try {
-      const { data: latest, error: e1 } = await supabaseClient.from("jobs_location_flags").select("snapshot_date")
-        .order("snapshot_date", { ascending: false }).limit(1);
-      if (e1) throw e1;
-      if (!latest || !latest.length) { showError("No rows found in jobs_location_flags."); return; }
-      state.snapshotDate = latest[0].snapshot_date;
-
-      // Quick first paint: pull just enough rows (in the same newest-first order
-      // renderTable defaults to) to fill the first page, so the table shows
-      // something in one small round trip instead of waiting on the full,
-      // multi-thousand-row fetch below. Filters/counts/other pages aren't
-      // reliable until the full set lands, so we flag that with fullyLoaded.
-      const quick = await supabaseClient.from("jobs_location_flags").select(LIST_COLUMNS)
-        .eq("snapshot_date", state.snapshotDate)
-        .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
-        .order("posted_at", { ascending: false, nullsFirst: false })
-        .order("first_seen", { ascending: false, nullsFirst: false })
-        .limit(state.pageSize);
-      if (quick.error) throw quick.error;
-      state.rows = quick.data || [];
-      state.fullyLoaded = false;
-      $(".loading").style.display = "none";
-      render();
-
-      // Full set for the latest snapshot, loaded in the background so filters,
-      // the company/classifier dropdowns, and pagination beyond page 1 become
-      // accurate a moment later without blocking the initial paint above.
-      state.rows = await fetchAllRows("jobs_location_flags", LIST_COLUMNS, (q) =>
-        q.eq("snapshot_date", state.snapshotDate)
-         .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
-         .order("watchlist_company", { ascending: true }).order("title", { ascending: true })
-      );
-      state.fullyLoaded = true;
-      render();
-    } catch (err) {
-      $(".loading").style.display = "none";
-      showError((err && err.message) ? err.message : String(err));
-      console.error(err);
-    }
+  // Rows come from the shared loader (one Supabase fetch total, no matter how
+  // many panels are on the page) rather than each panel querying on its own.
+  function onData(data) {
+    $(".loading").style.display = "none";
+    if (data.error) { showError(data.error); return; }
+    if (!data.snapshotDate) return;
+    state.snapshotDate = data.snapshotDate;
+    state.rows = data.rows;
+    state.fullyLoaded = data.fullyLoaded;
+    render();
   }
 
   // ---- Render ----
@@ -713,10 +739,11 @@ function initJobsPanel(panelEl) {
     });
   }
 
-  init();
+  onSharedData(onData);
 }
 
 document.querySelectorAll(".jobsPanel").forEach(initJobsPanel);
+loadSharedData();
 </script>
 </body>
 </html>
