@@ -692,6 +692,7 @@ function initJobsPanel(panelEl) {
     const dept = r.department ? esc(r.department) : "TBD";
     const posted = r.posted_at ? fmtDate(r.posted_at) : "TBD";
     const lastSeen = fmtDate(r.snapshot_date);
+    const firstSeen = r.first_seen ? fmtDate(r.first_seen) : "TBD";
     const ats = r.ats_type ? esc(r.ats_type) : "TBD";
     const atsId = esc(r.ats_id || "");
 
@@ -706,7 +707,8 @@ function initJobsPanel(panelEl) {
         ' | Role: ' + roleKw +
         ' | Level: ' + lvl + '</div>' +
       '<div class="metaline"><span class="lbl">Dates:</span> First Posted (ATS.ID): ' + posted +
-        ' | Last Seen: ' + lastSeen + '</div>' +
+        ' | Last Seen: ' + lastSeen +
+        ' | First Seen: ' + firstSeen + '</div>' +
       '<div class="metaline"><span class="lbl">ATS:</span> ' + ats +
         ' | ATS Job ID: ' + atsId + '</div>';
 
