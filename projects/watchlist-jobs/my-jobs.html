@@ -128,7 +128,7 @@ const PRESET_FILTERS = {
 // subset of "Last 3 days", which is a subset of "Last 7 days") - a row
 // matches if ANY checked bucket's test() covers its age.
 const DAYS_OLD_OPTIONS = [
-  { value: "today", label: "Today", test: n => n === 0 },
+  { value: "today", label: "Today", test: (n, age) => isSameLocalDate(age.date) },
   { value: "last3", label: "Last 3 days", test: n => n < 4 },
   { value: "last7", label: "Last 7 days", test: n => n < 8 },
   { value: "8-14", label: "8-14 days", test: n => n >= 8 && n <= 14 },
@@ -275,15 +275,37 @@ function daysOld(posted) {
   return Math.floor(ms / 86400000);
 }
 
+// Calendar-date equality between the date a row "says" it was posted (its
+// UTC calendar date, the same Y-M-D that's stored/displayed — not that
+// instant converted into the viewer's timezone, which could push a
+// UTC-early-morning post back to the previous local day) and the viewer's
+// local "today" (via local Date getters, so the day boundary matches when
+// the viewer's own calendar rolls over). Used by the "Today" bucket instead
+// of a rolling 24h window, which silently dropped a job out of "Today"
+// mid-day, hours before local midnight, once >24h had passed since posted_at.
+function isSameLocalDate(dateStr) {
+  if (!dateStr) return false;
+  const s = String(dateStr);
+  const now = new Date();
+  if (s.length <= 10) {
+    const [y, m, day] = s.split("-").map(Number);
+    if (!y || !m || !day) return false;
+    return y === now.getFullYear() && m === now.getMonth() + 1 && day === now.getDate();
+  }
+  const d = new Date(s);
+  if (isNaN(d)) return false;
+  return d.getUTCFullYear() === now.getFullYear() && d.getUTCMonth() === now.getMonth() && d.getUTCDate() === now.getDate();
+}
+
 // Sort/display key when posted_at is missing (e.g. Google's scraper never gets
 // a posted date from the source site). Falls back to first_seen, the date our
 // own pipeline first observed the job — an honest "discovered" signal, not a
-// substitute posted date. Returns {days, estimated} or null if neither exists.
+// substitute posted date. Returns {days, estimated, date} or null if neither exists.
 function effectiveAge(r) {
   const real = daysOld(r.posted_at);
-  if (real != null) return { days: real, estimated: false };
+  if (real != null) return { days: real, estimated: false, date: r.posted_at };
   const fallback = daysOld(r.first_seen);
-  if (fallback != null) return { days: fallback, estimated: true };
+  if (fallback != null) return { days: fallback, estimated: true, date: r.first_seen };
   return null;
 }
 
@@ -310,7 +332,7 @@ function daysOldMatch(selected, r) {
     if (v === UNCLASSIFIED) return n == null;
     if (n == null) return false;
     const opt = DAYS_OLD_OPTIONS.find(o => o.value === v);
-    return opt ? opt.test(n) : false;
+    return opt ? opt.test(n, age) : false;
   });
 }
 
