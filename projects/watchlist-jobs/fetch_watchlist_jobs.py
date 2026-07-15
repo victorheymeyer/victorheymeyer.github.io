@@ -412,7 +412,17 @@ FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title"
              "description_hash"]
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
             "url", "apply_url", "last_seen", "fetched_at", "discipline", "role_keyword",
-            "level", "raw"]
+            "level", "raw", "description_change_count",
+            "description_last_change_chars", "description_plain_len"]
+
+# description_last_change is not tracked here: it duplicated the existing
+# current_version_first_seen column (verified byte-identical), which
+# refresh_job_freshness() already maintains after every run. Consolidated
+# onto that column; the jobs_location_flags view aliases it back to the
+# description_last_change name for existing consumers.
+CHANGE_STATE_COLS = ["watchlist_company", "ats_id", "current_description_hash",
+                      "description_change_count",
+                      "description_last_change_chars", "description_plain_len"]
 
 
 def load_watchlist():
@@ -445,9 +455,52 @@ def load_watchlist():
     return watchlist
 
 
+def load_change_tracking_state():
+    """Bulk pre-read of job_content's change-tracking columns, keyed by
+    (watchlist_company, ats_id), so the per-job loop below can tell a real
+    description edit from a scraper's null-hash blip without re-deriving
+    history from raw_watchlist_jobs (which is pruned to RETENTION_DAYS).
+
+    current_description_hash is job_content's existing "previous hash"
+    column, already kept in sync by the refresh_job_freshness RPC after
+    every run (it only updates when the day's hash is both present and
+    different). Reusing it here avoids tracking the same hash twice.
+
+    Paginated in chunks of 1000, PostgREST's default max rows per request.
+    A short final page ends the read; anything else raises rather than
+    proceeding on a partial read, since these columns are written back on
+    every row of every run (added to DIM_COLS) -- a partial pre-read would
+    silently reset the rest of job_content's change-tracking state to
+    0/null on the next upsert, with no error surfaced.
+    """
+    state = {}
+    page_size = 1000
+    offset = 0
+    while True:
+        resp = sb.table("job_content").select(",".join(CHANGE_STATE_COLS)) \
+            .range(offset, offset + page_size - 1).execute()
+        rows = resp.data or []
+        for r in rows:
+            state[(r["watchlist_company"], r["ats_id"])] = r
+        if len(rows) < page_size:
+            break
+        offset += page_size
+
+    expected = sb.table("job_content").select("ats_id", count="exact").limit(1).execute().count
+    if len(state) != expected:
+        print(f"ERROR: change-tracking pre-read got {len(state)} rows but "
+              f"job_content has {expected}; aborting before write to avoid "
+              f"resetting change-tracking state for the difference.")
+        sys.exit(1)
+    return state
+
+
 def main():
     watchlist = load_watchlist()
     print(f"Loaded {len(watchlist)} active companies from watchlist_companies")
+
+    change_state = load_change_tracking_state()
+    print(f"Pre-read change-tracking state for {len(change_state)} jobs")
 
     fact_rows, dim_rows = [], []
     failures = []
@@ -494,8 +547,37 @@ def main():
                     # Hash the PLAIN text (stable change-detection signal,
                     # noise-resistant to HTML re-serialization, zero churn).
                     plain = d.get("description")
-                    d["description_hash"] = (
-                        hashlib.sha256(plain.encode("utf-8")).hexdigest() if plain else None
+                    new_hash = hashlib.sha256(plain.encode("utf-8")).hexdigest() if plain else None
+                    d["description_hash"] = new_hash
+
+                    # Char-delta change tracking. new_hash/new_len are None
+                    # together whenever today's plain text came back empty
+                    # (a scraper miss, e.g. Microsoft's Eightfold capture
+                    # flakes on ~80% of days) -- require new_hash is not
+                    # None, not just prev_hash, or every such miss would
+                    # register as a "change" against the last real hash.
+                    new_len = len(plain) if plain else None
+                    prev = change_state.get((company, d["ats_id"]))
+                    prev_hash = prev["current_description_hash"] if prev else None
+
+                    if prev is None:
+                        change_count, last_chars = 0, None
+                    elif prev_hash is not None and new_hash is not None and new_hash != prev_hash:
+                        change_count = (prev["description_change_count"] or 0) + 1
+                        prev_len = prev["description_plain_len"]
+                        last_chars = (new_len - prev_len) if (new_len is not None and prev_len is not None) else None
+                    else:
+                        change_count = prev["description_change_count"] or 0
+                        last_chars = prev["description_last_change_chars"]
+
+                    d["description_change_count"] = change_count
+                    d["description_last_change_chars"] = last_chars
+                    # Only refresh the length helper when today's text is
+                    # real; on a null-hash day, keep the last known length
+                    # so the next real change can still compute a delta.
+                    d["description_plain_len"] = (
+                        new_len if new_len is not None
+                        else (prev["description_plain_len"] if prev else None)
                     )
 
                     # Store HTML for display; fall back to plain text if we
