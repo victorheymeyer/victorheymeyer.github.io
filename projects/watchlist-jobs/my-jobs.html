@@ -91,7 +91,7 @@ const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
   "department","employment_type","salary_min","salary_max","salary_currency",
   "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
-  "discipline","role_keyword","level"
+  "discipline","role_keyword","level","description_last_change","description_change_count"
 ].join(",");
 
 // Sentinel value for the "(unclassified)" option in the classifier dropdowns
@@ -695,6 +695,8 @@ function initJobsPanel(panelEl) {
     const firstSeen = r.first_seen ? fmtDate(r.first_seen) : "TBD";
     const ats = r.ats_type ? esc(r.ats_type) : "TBD";
     const atsId = esc(r.ats_id || "");
+    const lastDescChange = r.description_last_change ? fmtDate(r.description_last_change) : "-";
+    const descChangeCount = r.description_change_count != null ? r.description_change_count : "-";
 
     const disc = r.discipline ? esc(r.discipline) : "-";
     const roleKw = r.role_keyword ? esc(r.role_keyword) : "-";
@@ -708,7 +710,9 @@ function initJobsPanel(panelEl) {
         ' | Level: ' + lvl + '</div>' +
       '<div class="metaline"><span class="lbl">Dates:</span> First Posted (ATS.ID): ' + posted +
         ' | Last Seen: ' + lastSeen +
-        ' | First Seen: ' + firstSeen + '</div>' +
+        ' | First Seen: ' + firstSeen +
+        ' | Last Desc Change: ' + lastDescChange +
+        ' | Char # delta: ' + descChangeCount + '</div>' +
       '<div class="metaline"><span class="lbl">ATS:</span> ' + ats +
         ' | ATS Job ID: ' + atsId + '</div>';
 
