@@ -42,7 +42,7 @@
     <div class="loading">Connecting to Supabase...</div>
   </div>
 
-  <div class="jobsPanel" data-hide-sub="true">
+  <div class="jobsPanel" data-hide-sub="true" data-preset="target">
     <div class="sub">Loading the latest snapshot...</div>
 
     <div class="errBox"></div>
@@ -422,11 +422,15 @@ function initJobsPanel(panelEl) {
   };
 
   // Panels can opt into a default filter state via data-preset on the
-  // .jobsPanel element, applied once before the first render.
-  if (panelEl.dataset.preset === "target-today") {
+  // .jobsPanel element, applied once before the first render. "target"
+  // applies the Discipline/Role/Level preset; "target-today" also adds
+  // the Today days-old bucket on top of it.
+  if (panelEl.dataset.preset === "target" || panelEl.dataset.preset === "target-today") {
     state.filters.discipline = PRESET_FILTERS.discipline.slice();
     state.filters.role = PRESET_FILTERS.role.slice();
     state.filters.level = PRESET_FILTERS.level.slice();
+  }
+  if (panelEl.dataset.preset === "target-today") {
     state.filters.daysOld = ["today"];
   }
 
