@@ -35,26 +35,6 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 // stats subpage is added; the section renders itself from that.
 const SECTIONS = [
   {
-    title: "Watchlist Companies",
-    href: "watchlist.html",
-    desc: "Every company on the watchlist, its ATS, slug, and active status.",
-    load: async () => {
-      const { data, error } = await supabaseClient
-        .from("watchlist_companies")
-        .select("ats,active");
-      if (error) throw error;
-      const rows = data || [];
-      const active = rows.filter(r => r.active).length;
-      const atsCount = new Set(rows.map(r => r.ats).filter(Boolean)).size;
-      return [
-        { label: "Companies", value: rows.length },
-        { label: "Active", value: active },
-        { label: "Inactive", value: rows.length - active },
-        { label: "ATS", value: atsCount },
-      ];
-    }
-  },
-  {
     title: "Top Employers (WA)",
     href: "top_employers.html",
     desc: "Top 50 companies by number of open Washington-based postings on the latest fetch day.",
@@ -80,6 +60,26 @@ const SECTIONS = [
         { label: "Companies", value: companies.size },
       ];
     }
+  },
+  {
+    title: "Watchlist Companies",
+    href: "watchlist.html",
+    desc: "Every company on the watchlist, its ATS, slug, and active status.",
+    load: async () => {
+      const { data, error } = await supabaseClient
+        .from("watchlist_companies")
+        .select("ats,active");
+      if (error) throw error;
+      const rows = data || [];
+      const active = rows.filter(r => r.active).length;
+      const atsCount = new Set(rows.map(r => r.ats).filter(Boolean)).size;
+      return [
+        { label: "Companies", value: rows.length },
+        { label: "Active", value: active },
+        { label: "Inactive", value: rows.length - active },
+        { label: "ATS", value: atsCount },
+      ];
+    }
   }
 ];
 
@@ -95,19 +95,21 @@ function showError(msg) {
 }
 
 function statCard(label, value) {
-  return '<div class="card"><div class="n">' + Number(value).toLocaleString() + '</div><div class="l">' + esc(label) + '</div></div>';
+  return '<div class="stat-chip"><div class="n">' + Number(value).toLocaleString() + '</div><div class="l">' + esc(label) + '</div></div>';
 }
 
 async function renderSection(section) {
   const panel = document.createElement("div");
-  panel.className = "panel";
+  panel.className = "stat-row";
   panel.innerHTML =
-    '<h2><a href="' + esc(section.href) + '">' + esc(section.title) + '</a></h2>' +
-    '<p class="hint">' + esc(section.desc) + '</p>' +
-    '<div class="cards stat-loading">Loading stats...</div>';
+    '<div class="stat-row-info">' +
+      '<h2><a href="' + esc(section.href) + '">' + esc(section.title) + '</a></h2>' +
+      '<p class="hint">' + esc(section.desc) + '</p>' +
+    '</div>' +
+    '<div class="stat-row-stats stat-loading">Loading stats...</div>';
   document.getElementById("sections").appendChild(panel);
 
-  const statsEl = panel.querySelector(".cards");
+  const statsEl = panel.querySelector(".stat-row-stats");
   try {
     const stats = await section.load();
     statsEl.classList.remove("stat-loading");

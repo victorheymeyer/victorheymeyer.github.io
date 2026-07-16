@@ -86,6 +86,23 @@ h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
 .panel h2 { font-size: var(--fs-base); margin: 0 0 var(--sp-4); }
 .panel .hint { color: var(--muted); font-size: var(--fs-xs); margin: 0 0 var(--sp-12); }
 
+/* Stats index: compact panel rows, title/description on the left, stat
+   chips on the right, half the height of a regular .panel + .cards stack. */
+.stat-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-16);
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: var(--sp-8) var(--sp-16); margin-bottom: var(--sp-9); min-height: 60px; }
+.stat-row-info { flex: 1 1 auto; min-width: 0; }
+.stat-row-info h2 { font-size: var(--fs-base); margin: 0 0 2px; }
+.stat-row-info h2 a { color: var(--text); text-decoration: none; }
+.stat-row-info h2 a:hover { text-decoration: underline; }
+.stat-row-info .hint { color: var(--muted); font-size: var(--fs-xs); margin: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-row-stats { display: flex; gap: var(--sp-8); flex-wrap: wrap; flex: 0 0 auto; }
+.stat-chip { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: var(--sp-6) var(--sp-10); text-align: center; min-width: 60px; }
+.stat-chip .n { font-size: 13px; font-weight: 600; line-height: 1.2; }
+.stat-chip .l { color: var(--muted); font-size: var(--fs-3xs); text-transform: uppercase; letter-spacing: .04em; }
+
 #chartWrap { width: 100%; overflow-x: auto; }
 canvas { display: block; }
 
@@ -206,4 +223,7 @@ td a:hover { text-decoration: underline; }
   .wrap th:nth-child(3), .wrap td:nth-child(3) { width: 100px !important; }  /* Location */
   .wrap th:nth-child(4), .wrap td:nth-child(4) { width: 44px !important; }   /* Days old */
   .wrap th:nth-child(5), .wrap td:nth-child(5) { width: 44px !important; }   /* Link */
+  .stat-row { flex-direction: column; align-items: stretch; min-height: 0; }
+  .stat-row-info .hint { white-space: normal; }
+  .stat-row-stats { justify-content: flex-start; }
 }
