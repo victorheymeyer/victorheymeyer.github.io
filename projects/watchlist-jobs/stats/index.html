@@ -53,6 +53,33 @@ const SECTIONS = [
         { label: "ATS", value: atsCount },
       ];
     }
+  },
+  {
+    title: "Top Employers (WA)",
+    href: "top_employers.html",
+    desc: "Top 50 companies by number of open Washington-based postings on the latest fetch day.",
+    load: async () => {
+      const { data: latest, error: e1 } = await supabaseClient
+        .from("jobs_location_flags").select("snapshot_date")
+        .order("snapshot_date", { ascending: false }).limit(1);
+      if (e1) throw e1;
+      if (!latest || !latest.length) return [{ label: "WA postings", value: 0 }];
+      const snapshotDate = latest[0].snapshot_date;
+
+      const { data, error } = await supabaseClient
+        .from("jobs_location_flags")
+        .select("watchlist_company")
+        .eq("snapshot_date", snapshotDate)
+        .eq("maybe_wa", true)
+        .limit(10000);
+      if (error) throw error;
+      const rows = data || [];
+      const companies = new Set(rows.map(r => r.watchlist_company));
+      return [
+        { label: "WA postings", value: rows.length },
+        { label: "Companies", value: companies.size },
+      ];
+    }
   }
 ];
 

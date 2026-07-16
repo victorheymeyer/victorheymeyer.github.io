@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Employers (WA)</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>Top Employers (WA)</h1>
+  <div class="sub" id="sub">Loading the latest snapshot...</div>
+
+  <div id="errBox"></div>
+
+  <div class="panel" id="chartPanel" style="display:none">
+    <h2>Open WA postings by company</h2>
+    <p class="hint">Top 50 companies by number of open Washington-based postings on the latest fetch day.</p>
+    <div id="chartWrap"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="loading" id="loading">Connecting to Supabase...</div>
+
+  <footer class="site-footer">
+    <p>© 2026 Victor Heymeyer | Seattle, WA |<a href="https://www.linkedin.com/in/heymeyer/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> </p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+const TOP_N = 50;
+
+const state = { snapshotDate: null, data: [] };
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function showError(msg) {
+  document.getElementById("errBox").innerHTML =
+    '<div class="err"><strong>Could not load data.</strong><br>' + msg +
+    '<br><br>If this is a permissions error, remember both the RLS <code>select</code> policy for <code>anon</code> AND the table <code>GRANT</code> are needed for reads.</div>';
+}
+
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt)) return d;
+  return dt.toISOString().slice(0, 10);
+}
+
+async function fetchAllRows(table, selectCols, applyFilters) {
+  // Requested page size. Supabase caps rows-per-request server-side
+  // (Project Settings > API > Max Rows, default 1000) and silently clamps
+  // anything larger than that cap, so we detect the REAL per-request size
+  // from what the first response actually contains rather than assuming
+  // this number was honored. That keeps pagination correct whether or not
+  // the server-side cap has been raised to match.
+  const requestedPageSize = 10000;
+  function buildQuery(withCount) {
+    let q = supabaseClient.from(table).select(selectCols, withCount ? { count: "exact" } : undefined);
+    if (applyFilters) q = applyFilters(q);
+    return q;
+  }
+
+  const first = await buildQuery(true).range(0, requestedPageSize - 1);
+  if (first.error) throw first.error;
+  let all = first.data || [];
+  const total = first.count != null ? first.count : all.length;
+  const actualPageSize = all.length > 0 ? all.length : requestedPageSize;
+
+  if (all.length < total) {
+    const requests = [];
+    for (let from = all.length; from < total; from += actualPageSize) {
+      requests.push(buildQuery(false).range(from, from + actualPageSize - 1));
+    }
+    const results = await Promise.all(requests);
+    for (const r of results) {
+      if (r.error) throw r.error;
+      all = all.concat(r.data || []);
+    }
+  }
+  return all;
+}
+
+// ---- Data load ----
+async function init() {
+  try {
+    const { data: latest, error: e1 } = await supabaseClient.from("jobs_location_flags").select("snapshot_date")
+      .order("snapshot_date", { ascending: false }).limit(1);
+    if (e1) throw e1;
+    if (!latest || !latest.length) { showError("No rows found in jobs_location_flags."); return; }
+    state.snapshotDate = latest[0].snapshot_date;
+
+    const rows = await fetchAllRows("jobs_location_flags", "watchlist_company,display_name", (q) =>
+      q.eq("snapshot_date", state.snapshotDate).eq("maybe_wa", true)
+    );
+
+    const counts = {};
+    const names = {};
+    rows.forEach(r => {
+      counts[r.watchlist_company] = (counts[r.watchlist_company] || 0) + 1;
+      names[r.watchlist_company] = r.display_name || r.watchlist_company;
+    });
+    state.data = Object.keys(counts)
+      .map(c => ({ company: c, name: names[c], n: counts[c] }))
+      .sort((a, b) => b.n - a.n)
+      .slice(0, TOP_N);
+
+    document.getElementById("sub").textContent =
+      "As of " + fmtDate(state.snapshotDate) + " | " + rows.length.toLocaleString() + " open WA postings across " +
+      Object.keys(counts).length.toLocaleString() + " companies | showing top " + state.data.length;
+
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("chartPanel").style.display = "block";
+    drawChart();
+  } catch (err) {
+    document.getElementById("loading").style.display = "none";
+    showError((err && err.message) ? err.message : String(err));
+    console.error(err);
+  }
+}
+
+function drawChart() {
+  const data = state.data;
+  const canvas = document.getElementById("chart");
+  const rowH = 22, padTop = 6, padBottom = 6, labelW = 160, valW = 50;
+  const cssW = Math.max(700, (document.getElementById("chartWrap").clientWidth || 700));
+  const cssH = padTop + padBottom + data.length * rowH;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cssW + "px";
+  canvas.style.height = cssH + "px";
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const max = data.length ? data[0].n : 1;
+  const barAreaW = cssW - labelW - valW - 12;
+
+  ctx.font = "12px -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.textBaseline = "middle";
+  data.forEach((d, i) => {
+    const y = padTop + i * rowH;
+    const cy = y + rowH / 2;
+    ctx.fillStyle = "#9aa3b2";
+    ctx.textAlign = "right";
+    ctx.fillText(d.name, labelW - 8, cy);
+
+    const w = Math.max(2, (d.n / max) * barAreaW);
+    ctx.fillStyle = "#4f9cff";
+    ctx.fillRect(labelW, y + 3, w, rowH - 6);
+
+    ctx.fillStyle = "#e6e8ec";
+    ctx.textAlign = "left";
+    ctx.fillText(d.n.toLocaleString(), labelW + w + 6, cy);
+  });
+}
+
+window.addEventListener("resize", () => { if (state.data.length) drawChart(); });
+init();
+</script>
+</body>
+</html>
