@@ -478,6 +478,7 @@ def load_change_tracking_state():
     offset = 0
     while True:
         resp = sb.table("job_content").select(",".join(CHANGE_STATE_COLS)) \
+            .order("watchlist_company").order("ats_id") \
             .range(offset, offset + page_size - 1).execute()
         rows = resp.data or []
         for r in rows:
