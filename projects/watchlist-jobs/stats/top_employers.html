@@ -96,10 +96,13 @@ async function fetchAllRows(table, selectCols, applyFilters) {
 // ---- Data load ----
 async function init() {
   try {
-    const { data: latest, error: e1 } = await supabaseClient.from("jobs_location_flags").select("snapshot_date")
+    // Queried against raw_watchlist_jobs (not the jobs_location_flags view) so
+    // idx_raw_watchlist_jobs_snapshot_date makes this an index scan instead of
+    // forcing a full join expansion.
+    const { data: latest, error: e1 } = await supabaseClient.from("raw_watchlist_jobs").select("snapshot_date")
       .order("snapshot_date", { ascending: false }).limit(1);
     if (e1) throw e1;
-    if (!latest || !latest.length) { showError("No rows found in jobs_location_flags."); return; }
+    if (!latest || !latest.length) { showError("No rows found in raw_watchlist_jobs."); return; }
     state.snapshotDate = latest[0].snapshot_date;
 
     const rows = await fetchAllRows("jobs_location_flags", "watchlist_company,display_name", (q) =>

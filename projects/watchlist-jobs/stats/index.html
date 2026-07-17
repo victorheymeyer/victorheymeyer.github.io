@@ -39,8 +39,11 @@ const SECTIONS = [
     href: "top_employers.html",
     desc: "Top 50 companies by number of open Washington-based postings on the latest fetch day.",
     load: async () => {
+      // Queried against raw_watchlist_jobs (not the jobs_location_flags view)
+      // so idx_raw_watchlist_jobs_snapshot_date makes this an index scan
+      // instead of forcing a full join expansion.
       const { data: latest, error: e1 } = await supabaseClient
-        .from("jobs_location_flags").select("snapshot_date")
+        .from("raw_watchlist_jobs").select("snapshot_date")
         .order("snapshot_date", { ascending: false }).limit(1);
       if (e1) throw e1;
       if (!latest || !latest.length) return [{ label: "WA postings", value: 0 }];

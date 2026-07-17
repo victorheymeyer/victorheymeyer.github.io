@@ -361,10 +361,13 @@ function notifySharedData() {
 
 async function loadSharedData() {
   try {
-    const { data: latest, error: e1 } = await supabaseClient.from("jobs_location_flags").select("snapshot_date")
+    // Queried against raw_watchlist_jobs (not the jobs_location_flags view) so
+    // idx_raw_watchlist_jobs_snapshot_date makes this an index scan instead of
+    // forcing a full join expansion.
+    const { data: latest, error: e1 } = await supabaseClient.from("raw_watchlist_jobs").select("snapshot_date")
       .order("snapshot_date", { ascending: false }).limit(1);
     if (e1) throw e1;
-    if (!latest || !latest.length) { sharedData.error = "No rows found in jobs_location_flags."; notifySharedData(); return; }
+    if (!latest || !latest.length) { sharedData.error = "No rows found in raw_watchlist_jobs."; notifySharedData(); return; }
     sharedData.snapshotDate = latest[0].snapshot_date;
 
     // Quick first paint: pull just enough rows (newest-first, same order
@@ -385,11 +388,12 @@ async function loadSharedData() {
 
     // Full set for the latest snapshot, loaded in the background so filters,
     // the company/classifier dropdowns, and pagination beyond page 1 become
-    // accurate a moment later without blocking the initial paint above.
+    // accurate a moment later without blocking the initial paint above. No
+    // server-side order here: renderTable() re-sorts client-side by
+    // effective age, so a server sort is wasted work that can spill to disk.
     sharedData.rows = await fetchAllRows("jobs_location_flags", LIST_COLUMNS, (q) =>
       q.eq("snapshot_date", sharedData.snapshotDate)
        .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
-       .order("watchlist_company", { ascending: true }).order("title", { ascending: true })
     );
     sharedData.fullyLoaded = true;
     notifySharedData();
