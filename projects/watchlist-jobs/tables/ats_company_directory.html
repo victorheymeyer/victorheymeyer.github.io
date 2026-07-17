@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Table Stats: ats_company_directory</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>ats_company_directory</h1>
+  <div class="sub" id="sub">Loading...</div>
+
+  <div id="errBox"></div>
+
+  <div class="cards" id="headerCards"></div>
+
+  <div class="panel" id="depthPanel" style="display:none">
+    <h2>Depth: rows and size over time</h2>
+    <p class="hint" id="depthHint"></p>
+    <div class="chartpair">
+      <div>
+        <div class="chart-label">Row count</div>
+        <div id="rowsChartWrap"><canvas id="rowsChart"></canvas></div>
+      </div>
+      <div>
+        <div class="chart-label">Total size</div>
+        <div id="sizeChartWrap"><canvas id="sizeChart"></canvas></div>
+      </div>
+    </div>
+    <p class="hint" id="recencyHint"></p>
+  </div>
+
+  <div class="panel" id="breadthPanel" style="display:none">
+    <h2>Breadth: columns</h2>
+    <p class="hint" id="breadthHint"></p>
+    <div id="nonNullBars" class="barlist"></div>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Column</th><th style="width:150px">Type</th><th style="width:100px">Non-null</th><th style="width:100px">Distinct</th><th style="width:90px">Avg len</th><th style="width:90px">Max len</th></tr>
+      </thead>
+      <tbody id="columnTbody"></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="panel" id="storagePanel" style="display:none">
+    <h2>Storage</h2>
+    <p class="hint">Heap holds fixed-width row data; TOAST holds any large values stored out-of-line and compressed; indexes are separate again. <code>pg_column_size</code> is a compressed/on-disk approximation, not an exact byte accounting.</p>
+    <div class="splitbar" id="splitBar"></div>
+    <div id="splitLegend" class="split-legend"></div>
+
+    <h3 class="substep">Per-column bytes</h3>
+    <p class="hint">Sorted largest first. No field dominates here &mdash; <code>url</code> is the biggest at well under a fifth of total size.</p>
+    <div id="columnBytesBars" class="barlist"></div>
+
+    <h3 class="substep">Growth projection</h3>
+    <div id="projectionBox" class="hint"></div>
+  </div>
+
+  <div class="panel" id="samplePanel" style="display:none">
+    <h2>Sample rows</h2>
+    <p class="hint">10 live rows from <code>ats_company_directory</code> (the only live query on this page &mdash; everything else above reads the nightly stats tables). Click a row to see every column.</p>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Company</th><th style="width:110px">ATS</th><th>Slug</th><th style="width:70px">Link</th></tr>
+      </thead>
+      <tbody id="sampleTbody"></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="loading" id="loading">Connecting to Supabase...</div>
+
+  <footer class="site-footer">
+    <p>© 2026 Victor Heymeyer | Seattle, WA |<a href="https://www.linkedin.com/in/heymeyer/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> </p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+const TABLE_NAME = "ats_company_directory";
+
+const state = { history: [], latest: null, columns: [], sampleRows: [], expanded: null };
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function showError(msg) {
+  document.getElementById("errBox").innerHTML =
+    '<div class="err"><strong>Could not load data.</strong><br>' + msg +
+    '<br><br>If this is a permissions error, remember both the RLS <code>select</code> policy for <code>anon</code> AND the table <code>GRANT</code> are needed for reads.</div>';
+}
+
+function fmtBytes(n) {
+  if (n == null) return "-";
+  const units = ["bytes", "kB", "MB", "GB", "TB"];
+  let v = Number(n), i = 0;
+  while (Math.abs(v) >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(1)) + " " + units[i];
+}
+
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return d;
+  return (dt.getMonth() + 1) + "/" + dt.getDate() + "/" + dt.getFullYear();
+}
+
+function fmtDateTime(ts) {
+  if (!ts) return "";
+  const dt = new Date(ts);
+  if (isNaN(dt)) return ts;
+  return dt.toLocaleString();
+}
+
+function statCard(label, value) {
+  return '<div class="card"><div class="n">' + value + '</div><div class="l">' + esc(label) + '</div></div>';
+}
+
+// ---- Line chart (rows/size over time), same canvas approach as stats/watchlist.html ----
+function drawLineChart(canvasId, wrapId, data, valueKey, formatValue) {
+  const canvas = document.getElementById(canvasId);
+  const wrap = document.getElementById(wrapId);
+  const padTop = 16, padBottom = 28, padLeft = 54, padRight = 12;
+  const cssW = Math.max(320, (wrap.clientWidth || 320));
+  const cssH = 200;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cssW + "px";
+  canvas.style.height = cssH + "px";
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const plotW = cssW - padLeft - padRight;
+  const plotH = cssH - padTop - padBottom;
+  const max = Math.max(1, ...data.map(d => d[valueKey]));
+  const x = i => padLeft + (data.length > 1 ? (i / (data.length - 1)) * plotW : plotW / 2);
+  const y = v => padTop + plotH - (v / max) * plotH;
+
+  ctx.font = "11px -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.strokeStyle = "rgba(154,163,178,0.15)";
+  ctx.fillStyle = "#9aa3b2";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  const ticks = 4;
+  for (let t = 0; t <= ticks; t++) {
+    const v = (max / ticks) * t;
+    const gy = y(v);
+    ctx.beginPath();
+    ctx.moveTo(padLeft, gy);
+    ctx.lineTo(cssW - padRight, gy);
+    ctx.stroke();
+    ctx.fillText(formatValue(v), padLeft - 8, gy);
+  }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const labelEvery = Math.max(1, Math.ceil(data.length / 6));
+  data.forEach((d, i) => {
+    if (i % labelEvery === 0 || i === data.length - 1) {
+      ctx.fillText(fmtDate(d.captured_date), x(i), cssH - padBottom + 8);
+    }
+  });
+
+  if (data.length === 1) {
+    // Single point: draw a marker instead of a degenerate line/area.
+    ctx.fillStyle = "#4f9cff";
+    ctx.beginPath();
+    ctx.arc(x(0), y(data[0][valueKey]), 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(x(0), y(0));
+  data.forEach((d, i) => ctx.lineTo(x(i), y(d[valueKey])));
+  ctx.lineTo(x(data.length - 1), y(0));
+  ctx.closePath();
+  ctx.fillStyle = "rgba(79,156,255,0.15)";
+  ctx.fill();
+
+  ctx.beginPath();
+  data.forEach((d, i) => {
+    const px = x(i), py = y(d[valueKey]);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+  ctx.strokeStyle = "#4f9cff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = "#4f9cff";
+  data.forEach((d, i) => {
+    ctx.beginPath();
+    ctx.arc(x(i), y(d[valueKey]), 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawCharts() {
+  if (!state.history.length) return;
+  drawLineChart("rowsChart", "rowsChartWrap", state.history, "row_count", v => Math.round(v).toLocaleString());
+  drawLineChart("sizeChart", "sizeChartWrap", state.history, "total_bytes", fmtBytes);
+}
+
+// ---- Horizontal bar list (non-null %, per-column bytes) ----
+function renderBarList(containerId, items, formatValue) {
+  const max = Math.max(1, ...items.map(i => i.value));
+  document.getElementById(containerId).innerHTML = items.map(i => {
+    const pct = Math.max(2, (i.value / max) * 100);
+    return '<div class="barrow">' +
+      '<div class="barrow-label" title="' + esc(i.label) + '">' + esc(i.label) + '</div>' +
+      '<div class="barrow-track"><div class="barrow-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="barrow-value">' + esc(formatValue(i.value)) + '</div>' +
+    '</div>';
+  }).join("");
+}
+
+function renderSplitBar(heap, toast, index) {
+  const total = Math.max(1, heap + toast + index);
+  const parts = [
+    { label: "Heap", value: heap, cls: "seg-heap" },
+    { label: "TOAST", value: toast, cls: "seg-toast" },
+    { label: "Indexes", value: index, cls: "seg-index" }
+  ];
+  document.getElementById("splitBar").innerHTML = parts.map(p =>
+    '<div class="' + p.cls + '" style="width:' + Math.max(0, (p.value / total) * 100) + '%" title="' + esc(p.label) + ": " + fmtBytes(p.value) + '"></div>'
+  ).join("");
+  document.getElementById("splitLegend").innerHTML = parts.map(p =>
+    '<span class="legend-item"><span class="legend-swatch ' + p.cls + '"></span>' + p.label + ": " + fmtBytes(p.value) + " (" + ((p.value / total) * 100).toFixed(1) + "%)</span>"
+  ).join("");
+}
+
+// ---- Growth projection: simple linear fit on total_bytes history ----
+function renderProjection(history) {
+  const box = document.getElementById("projectionBox");
+  const MIN_POINTS = 3;
+  const CAP_BYTES = 500 * 1024 * 1024; // Supabase free-tier DB cap, assumed pending confirmation
+  if (history.length < MIN_POINTS) {
+    box.textContent = "Needs at least " + MIN_POINTS + " nightly captures to fit a trend (" + history.length + " so far). Check back once more history has accrued.";
+    return;
+  }
+  const t0 = new Date(history[0].captured_date + "T00:00:00").getTime();
+  const xs = history.map(h => (new Date(h.captured_date + "T00:00:00").getTime() - t0) / 86400000);
+  const ys = history.map(h => h.total_bytes);
+  const n = xs.length;
+  const sumX = xs.reduce((a, b) => a + b, 0);
+  const sumY = ys.reduce((a, b) => a + b, 0);
+  const sumXY = xs.reduce((a, x, i) => a + x * ys[i], 0);
+  const sumXX = xs.reduce((a, x) => a + x * x, 0);
+  const denom = n * sumXX - sumX * sumX;
+  if (denom === 0) { box.textContent = "Not enough spread in capture dates yet to fit a trend."; return; }
+  const slope = (n * sumXY - sumX * sumY) / denom; // bytes/day
+  const intercept = (sumY - slope * sumX) / n;
+  const latestBytes = ys[ys.length - 1];
+  if (slope <= 0) {
+    box.textContent = "Size isn't trending up (" + fmtBytes(slope) + "/day) based on the last " + n + " captures, so no cap projection.";
+    return;
+  }
+  const daysToCap = (CAP_BYTES - intercept) / slope - xs[xs.length - 1];
+  if (daysToCap <= 0) {
+    box.textContent = "Projected size already exceeds the assumed 500 MB free-tier cap based on the current trend.";
+  } else {
+    box.textContent = "At " + fmtBytes(slope) + "/day (linear fit over " + n + " captures), current size " + fmtBytes(latestBytes) +
+      " reaches an assumed 500 MB free-tier cap in about " + Math.round(daysToCap) + " days.";
+  }
+}
+
+// ---- Sample rows ----
+function renderSampleTable() {
+  const tbody = document.getElementById("sampleTbody");
+  tbody.innerHTML = "";
+  state.sampleRows.forEach(r => {
+    const key = r.id;
+    const tr = document.createElement("tr");
+    tr.className = "jobrow";
+    tr.innerHTML =
+      '<td class="company">' + esc(r.company) + '</td>' +
+      '<td class="loc">' + esc(r.ats || "") + '</td>' +
+      '<td class="loc" title="' + esc(r.slug || "") + '">' + esc(r.slug || "") + '</td>' +
+      '<td>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
+    tr.onclick = () => { state.expanded = (state.expanded === key) ? null : key; renderSampleTable(); };
+    tbody.appendChild(tr);
+
+    if (state.expanded === key) {
+      const dtr = document.createElement("tr");
+      dtr.className = "detail";
+      const td = document.createElement("td");
+      td.colSpan = 4;
+
+      const skip = new Set(["company", "ats", "slug", "url"]);
+      const metaCols = Object.keys(r).filter(k => !skip.has(k));
+      const meta = metaCols.map(k => '<div class="metaline"><span class="lbl">' + esc(k) + ':</span> ' + esc(r[k] == null ? "-" : String(r[k])) + '</div>').join("");
+
+      td.innerHTML = '<div class="meta">' + meta + '</div>';
+      dtr.appendChild(td);
+      tbody.appendChild(dtr);
+    }
+  });
+}
+
+async function init() {
+  try {
+    const { data: history, error: histErr } = await supabaseClient
+      .from("table_stats").select("*")
+      .eq("table_name", TABLE_NAME)
+      .order("captured_date", { ascending: true });
+    if (histErr) throw histErr;
+    state.history = history || [];
+    if (!state.history.length) throw new Error("No table_stats rows yet for " + TABLE_NAME + ". Run the nightly capture first.");
+    state.latest = state.history[state.history.length - 1];
+
+    const { data: columns, error: colErr } = await supabaseClient
+      .from("column_stats").select("*")
+      .eq("table_name", TABLE_NAME)
+      .eq("captured_date", state.latest.captured_date)
+      .order("ordinal", { ascending: true });
+    if (colErr) throw colErr;
+    state.columns = columns || [];
+
+    const { data: sample, error: sampleErr } = await supabaseClient
+      .from("ats_company_directory").select("*")
+      .order("company", { ascending: true })
+      .limit(10);
+    if (sampleErr) throw sampleErr;
+    state.sampleRows = sample || [];
+
+    render();
+    document.getElementById("loading").style.display = "none";
+  } catch (err) {
+    document.getElementById("loading").style.display = "none";
+    showError((err && err.message) ? err.message : String(err));
+    console.error(err);
+  }
+}
+
+function render() {
+  const latest = state.latest;
+
+  document.getElementById("sub").textContent =
+    "Nightly storage and shape monitoring for ats_company_directory, the candidate-company directory rebuilt monthly across ATS platforms and used by the slug search page.";
+
+  document.getElementById("headerCards").innerHTML =
+    statCard("Rows", latest.row_count.toLocaleString()) +
+    statCard("Total size", fmtBytes(latest.total_bytes)) +
+    statCard("Heap", fmtBytes(latest.heap_bytes)) +
+    statCard("TOAST", fmtBytes(latest.toast_bytes)) +
+    statCard("Indexes", fmtBytes(latest.index_bytes)) +
+    statCard("Dead tuples", (latest.dead_tuples || 0).toLocaleString()) +
+    statCard("Last refreshed", fmtDateTime(latest.captured_at));
+
+  document.getElementById("depthHint").textContent =
+    state.history.length > 1
+      ? "Row count and total size across " + state.history.length + " nightly captures. This table only actually changes once a month, so expect a flat line most days with a step on rebuild."
+      : "Only one capture so far (" + fmtDate(latest.captured_date) + "). Trajectory fills in as more nightly captures accrue.";
+  document.getElementById("depthPanel").style.display = "block";
+  drawCharts();
+
+  const mind = latest.min_data_date, maxd = latest.max_data_date;
+  if (mind && maxd) {
+    // The monthly build upserts every row in one pass, so min == max: this is
+    // a single full-refresh timestamp, not a growing window like the other
+    // tables' recency signals.
+    document.getElementById("recencyHint").innerHTML =
+      (mind === maxd
+        ? "Last full directory refresh (based on <code>updated_at</code>): " + fmtDate(mind) + "."
+        : "Recency window (based on <code>updated_at</code>): " + fmtDate(mind) + " to " + fmtDate(maxd) + ".") +
+      " The whole table is rebuilt in one monthly pass, so this is a single refresh date, not an accumulating window.";
+  }
+
+  document.getElementById("breadthHint").innerHTML =
+    state.columns.length + " columns, " + latest.row_count.toLocaleString() + " rows as of " + fmtDate(latest.captured_date) + ". Sorted by non-null%.";
+
+  const sortedColumns = state.columns
+    .map(c => ({ ...c, pct: latest.row_count ? (c.non_null_count / latest.row_count) * 100 : 0 }))
+    .sort((a, b) => b.pct - a.pct);
+
+  renderBarList("nonNullBars",
+    sortedColumns.map(c => ({ label: c.column_name, value: c.pct })),
+    v => v.toFixed(1) + "%");
+  document.getElementById("columnTbody").innerHTML = sortedColumns.map(c => {
+    return '<tr>' +
+      '<td>' + esc(c.column_name) + '</td>' +
+      '<td class="loc">' + esc(c.data_type) + '</td>' +
+      '<td class="loc">' + c.pct.toFixed(1) + '%</td>' +
+      '<td class="loc">' + (c.distinct_count == null ? "-" : Number(c.distinct_count).toLocaleString()) + '</td>' +
+      '<td class="loc">' + (c.avg_len == null ? "-" : Number(c.avg_len).toFixed(1)) + '</td>' +
+      '<td class="loc">' + (c.max_len == null ? "-" : c.max_len) + '</td>' +
+    '</tr>';
+  }).join("");
+  document.getElementById("breadthPanel").style.display = "block";
+
+  renderSplitBar(latest.heap_bytes, latest.toast_bytes, latest.index_bytes);
+  renderBarList("columnBytesBars",
+    state.columns.map(c => ({ label: c.column_name, value: c.total_bytes || 0 })).sort((a, b) => b.value - a.value),
+    fmtBytes);
+  renderProjection(state.history);
+  document.getElementById("storagePanel").style.display = "block";
+
+  renderSampleTable();
+  document.getElementById("samplePanel").style.display = "block";
+}
+
+window.addEventListener("resize", () => { if (state.history.length) drawCharts(); });
+init();
+</script>
+</body>
+</html>
