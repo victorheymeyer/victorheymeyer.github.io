@@ -15,6 +15,12 @@
 
   <div id="errBox"></div>
 
+  <div class="panel" id="growthPanel" style="display:none">
+    <h2>Growth in active companies</h2>
+    <p class="hint">Distinct companies with at least one posting per day, as a proxy for how many watchlist companies were actively producing data (there's no history of the <code>active</code> flag itself, so this is derived from daily job snapshots).</p>
+    <div id="growthChartWrap"><canvas id="growthChart"></canvas></div>
+  </div>
+
   <div class="panel" id="atsPanel" style="display:none">
     <h2>Company count by ATS</h2>
     <p class="hint">Active and inactive company counts for each ATS platform.</p>
@@ -66,7 +72,7 @@ const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 
-const state = { rows: [], search: "", ats: "", status: "" };
+const state = { rows: [], growth: [], search: "", ats: "", status: "" };
 
 function showError(msg) {
   document.getElementById("errBox").innerHTML =
@@ -80,6 +86,90 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return d;
+  return (dt.getMonth() + 1) + "/" + dt.getDate();
+}
+
+function drawGrowthChart() {
+  const data = state.growth;
+  const canvas = document.getElementById("growthChart");
+  const padTop = 16, padBottom = 28, padLeft = 44, padRight = 12;
+  const cssW = Math.max(700, (document.getElementById("growthChartWrap").clientWidth || 700));
+  const cssH = 260;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cssW + "px";
+  canvas.style.height = cssH + "px";
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const plotW = cssW - padLeft - padRight;
+  const plotH = cssH - padTop - padBottom;
+  const max = Math.max(1, ...data.map(d => d.companies));
+  const x = i => padLeft + (data.length > 1 ? (i / (data.length - 1)) * plotW : plotW / 2);
+  const y = v => padTop + plotH - (v / max) * plotH;
+
+  ctx.font = "11px -apple-system, Segoe UI, Roboto, sans-serif";
+
+  // Gridlines + y-axis labels (4 ticks)
+  const ticks = 4;
+  ctx.strokeStyle = "rgba(154,163,178,0.15)";
+  ctx.fillStyle = "#9aa3b2";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  for (let t = 0; t <= ticks; t++) {
+    const v = Math.round((max / ticks) * t);
+    const gy = y(v);
+    ctx.beginPath();
+    ctx.moveTo(padLeft, gy);
+    ctx.lineTo(cssW - padRight, gy);
+    ctx.stroke();
+    ctx.fillText(v.toLocaleString(), padLeft - 8, gy);
+  }
+
+  // X-axis labels: first, last, and a few in between
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const labelEvery = Math.max(1, Math.ceil(data.length / 8));
+  data.forEach((d, i) => {
+    if (i % labelEvery === 0 || i === data.length - 1) {
+      ctx.fillText(fmtDate(d.snapshot_date), x(i), cssH - padBottom + 8);
+    }
+  });
+
+  // Filled area under the line
+  ctx.beginPath();
+  ctx.moveTo(x(0), y(0));
+  data.forEach((d, i) => ctx.lineTo(x(i), y(d.companies)));
+  ctx.lineTo(x(data.length - 1), y(0));
+  ctx.closePath();
+  ctx.fillStyle = "rgba(79,156,255,0.15)";
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  data.forEach((d, i) => {
+    const px = x(i), py = y(d.companies);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+  ctx.strokeStyle = "#4f9cff";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Points
+  ctx.fillStyle = "#4f9cff";
+  data.forEach((d, i) => {
+    ctx.beginPath();
+    ctx.arc(x(i), y(d.companies), 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 async function init() {
   try {
     const { data, error } = await supabaseClient
@@ -89,6 +179,14 @@ async function init() {
       .limit(5000);
     if (error) throw error;
     state.rows = data || [];
+
+    const { data: growth, error: growthErr } = await supabaseClient.rpc("active_company_growth");
+    if (growthErr) throw growthErr;
+    state.growth = growth || [];
+    if (state.growth.length) {
+      document.getElementById("growthPanel").style.display = "block";
+      drawGrowthChart();
+    }
 
     const activeCount = state.rows.filter(r => r.active).length;
     const atsList = Array.from(new Set(state.rows.map(r => r.ats).filter(Boolean))).sort();
@@ -180,6 +278,7 @@ function wireControls() {
   };
 }
 
+window.addEventListener("resize", () => { if (state.growth.length) drawGrowthChart(); });
 init();
 </script>
 </body>
