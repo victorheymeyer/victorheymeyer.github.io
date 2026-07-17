@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Table Stats: job_content</title>
+<title>Table Stats: raw_watchlist_jobs</title>
 <link rel="stylesheet" href="/styles.css">
 <script defer src="/site.js"></script>
 </head>
 <body>
 <div id="siteNav"></div>
 <div class="wrap">
-  <h1>job_content</h1>
+  <h1>raw_watchlist_jobs</h1>
   <div class="sub" id="sub">Loading...</div>
 
   <div id="errBox"></div>
@@ -40,7 +40,7 @@
     <div class="table-scroll">
     <table>
       <thead>
-        <tr><th>Column</th><th style="width:110px">Type</th><th style="width:90px">Non-null</th><th style="width:110px" title="Non-null % restricted to rows where seattle_and_remote = true">Seattle+Remote</th><th style="width:90px">Distinct</th><th style="width:80px">Avg len</th><th style="width:80px">Max len</th></tr>
+        <tr><th>Column</th><th style="width:150px">Type</th><th style="width:100px">Non-null</th><th style="width:100px">Distinct</th><th style="width:90px">Avg len</th><th style="width:90px">Max len</th></tr>
       </thead>
       <tbody id="columnTbody"></tbody>
     </table>
@@ -49,12 +49,12 @@
 
   <div class="panel" id="storagePanel" style="display:none">
     <h2>Storage</h2>
-    <p class="hint">Heap holds fixed-width row data; TOAST holds large values (like <code>description</code> and <code>raw</code>) stored out-of-line and compressed; indexes are separate again. <code>pg_column_size</code> is a compressed/on-disk approximation, not an exact byte accounting.</p>
+    <p class="hint">Heap holds fixed-width row data; TOAST holds any large values stored out-of-line and compressed; indexes are separate again. <code>pg_column_size</code> is a compressed/on-disk approximation, not an exact byte accounting.</p>
     <div class="splitbar" id="splitBar"></div>
     <div id="splitLegend" class="split-legend"></div>
 
     <h3 class="substep">Per-column bytes</h3>
-    <p class="hint">Sorted largest first, so the fields worth watching surface at the top.</p>
+    <p class="hint">Sorted largest first. Unlike job_content, no single field dominates here &mdash; <code>url</code>, <code>description_hash</code>, and <code>apply_url</code> are all modest text fields.</p>
     <div id="columnBytesBars" class="barlist"></div>
 
     <h3 class="substep">Growth projection</h3>
@@ -63,11 +63,11 @@
 
   <div class="panel" id="samplePanel" style="display:none">
     <h2>Sample rows</h2>
-    <p class="hint">10 live rows queried directly from <code>job_content</code> (the only live query on this page &mdash; everything else above reads the nightly stats tables). Click a row to see every column, with <code>description</code> and <code>raw</code> shown as a preview plus a length badge.</p>
+    <p class="hint">10 live rows from the latest <code>snapshot_date</code>, queried directly from <code>raw_watchlist_jobs</code> (the only live query on this page &mdash; everything else above reads the nightly stats tables). Click a row to see every column.</p>
     <div class="table-scroll">
     <table>
       <thead>
-        <tr><th>Company</th><th>Title</th><th style="width:120px">Last seen</th><th style="width:90px">Desc</th><th style="width:90px">Raw</th></tr>
+        <tr><th>Company</th><th>Title</th><th style="width:120px">Snapshot date</th><th style="width:160px">Location</th></tr>
       </thead>
       <tbody id="sampleTbody"></tbody>
     </table>
@@ -82,24 +82,13 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <script>
 // ---- Config ----
 const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 
-const TABLE_NAME = "job_content";
-// A filtered breadth-only capture (see capture_table_stats.py) storing
-// non-null stats for just the seattle_and_remote = true subset, the only
-// rows that actually retain description/raw. Job_content-specific, not part
-// of the generic per-table template.
-const SEATTLE_STATS_NAME = "job_content_seattle_and_remote";
-// Large-value columns to call out in the sample view. On job_content both
-// description (text) and raw (jsonb, the full ATS payload) are TOASTed and
-// nulled out for non-Seattle-relevant rows (see null_non_seattle_description/
-// null_non_seattle_raw), so low non-null% here is expected, not missing data.
-const LARGE_FIELDS = ["description", "raw"];
+const TABLE_NAME = "raw_watchlist_jobs";
 
 const state = { history: [], latest: null, columns: [], sampleRows: [], expanded: null };
 
@@ -292,30 +281,18 @@ function renderProjection(history) {
 }
 
 // ---- Sample rows ----
-function truncatePreview(text, len) {
-  if (!text) return "";
-  const s = String(text);
-  return s.length > len ? s.slice(0, len) + "…" : s;
-}
-
-function lengthBadge(text) {
-  if (!text) return '<span class="badge">empty</span>';
-  return '<span class="badge">' + String(text).length.toLocaleString() + " chars</span>";
-}
-
 function renderSampleTable() {
   const tbody = document.getElementById("sampleTbody");
   tbody.innerHTML = "";
   state.sampleRows.forEach(r => {
-    const key = r.watchlist_company + "::" + r.ats_id;
+    const key = r.watchlist_company + "::" + r.ats_id + "::" + r.snapshot_date;
     const tr = document.createElement("tr");
     tr.className = "jobrow";
     tr.innerHTML =
       '<td class="company">' + esc(r.watchlist_company) + '</td>' +
       '<td title="' + esc(r.title || "") + '">' + esc(r.title || "(no title)") + '</td>' +
-      '<td class="loc">' + fmtDate(r.last_seen) + '</td>' +
-      '<td>' + lengthBadge(r.description) + '</td>' +
-      '<td>' + lengthBadge(r.raw ? JSON.stringify(r.raw) : null) + '</td>';
+      '<td class="loc">' + fmtDate(r.snapshot_date) + '</td>' +
+      '<td class="loc" title="' + esc(r.location || "") + '">' + esc(r.location || "") + '</td>';
     tr.onclick = () => { state.expanded = (state.expanded === key) ? null : key; renderSampleTable(); };
     tbody.appendChild(tr);
 
@@ -323,26 +300,13 @@ function renderSampleTable() {
       const dtr = document.createElement("tr");
       dtr.className = "detail";
       const td = document.createElement("td");
-      td.colSpan = 5;
+      td.colSpan = 4;
 
-      const skip = new Set(["watchlist_company", "ats_id", "title", "last_seen", "description", "raw"]);
+      const skip = new Set(["watchlist_company", "title", "snapshot_date", "location"]);
       const metaCols = Object.keys(r).filter(k => !skip.has(k));
       const meta = metaCols.map(k => '<div class="metaline"><span class="lbl">' + esc(k) + ':</span> ' + esc(r[k] == null ? "-" : String(r[k])) + '</div>').join("");
 
-      const descPreview = truncatePreview(r.description, 400);
-      const descHtml = r.description
-        ? '<div class="desc">' + DOMPurify.sanitize(descPreview.replace(/\n/g, "<br>")) + (r.description.length > 400 ? " <em>(truncated, " + r.description.length + " chars total)</em>" : "") + '</div>'
-        : '<div class="desc">No description stored (nulled for non-Seattle-relevant postings).</div>';
-
-      const rawText = r.raw ? JSON.stringify(r.raw, null, 2) : null;
-      const rawPreview = truncatePreview(rawText, 600);
-      const rawHtml = rawText
-        ? '<pre class="desc">' + esc(rawPreview) + (rawText.length > 600 ? "\n\n... (truncated, " + rawText.length + " chars total)" : "") + '</pre>'
-        : '<div class="desc">No raw payload stored (nulled for non-Seattle-relevant postings).</div>';
-
-      td.innerHTML = '<div class="meta">' + meta + '</div>' +
-        '<div class="metaline"><span class="lbl">description:</span></div>' + descHtml +
-        '<div class="metaline"><span class="lbl">raw:</span></div>' + rawHtml;
+      td.innerHTML = '<div class="meta">' + meta + '</div>';
       dtr.appendChild(td);
       tbody.appendChild(dtr);
     }
@@ -368,35 +332,23 @@ async function init() {
     if (colErr) throw colErr;
     state.columns = columns || [];
 
-    // Seattle/remote-WA breadth slice: same captured_date as the main
-    // capture (both run back-to-back nightly), but tolerate it being absent
-    // (e.g. before the first run after this feature shipped).
-    const { data: seattleRows, error: seattleErr } = await supabaseClient
-      .from("table_stats").select("row_count")
-      .eq("table_name", SEATTLE_STATS_NAME)
-      .order("captured_date", { ascending: false })
+    const { data: latestSnap, error: snapErr } = await supabaseClient
+      .from("raw_watchlist_jobs").select("snapshot_date")
+      .order("snapshot_date", { ascending: false })
       .limit(1);
-    if (seattleErr) throw seattleErr;
-    state.seattleRowCount = (seattleRows && seattleRows.length) ? seattleRows[0].row_count : null;
+    if (snapErr) throw snapErr;
+    const snapshotDate = (latestSnap && latestSnap.length) ? latestSnap[0].snapshot_date : null;
 
-    if (state.seattleRowCount != null) {
-      const { data: seattleCols, error: seattleColErr } = await supabaseClient
-        .from("column_stats").select("column_name,non_null_count")
-        .eq("table_name", SEATTLE_STATS_NAME)
-        .eq("captured_date", state.latest.captured_date);
-      if (seattleColErr) throw seattleColErr;
-      state.seattleNonNull = {};
-      (seattleCols || []).forEach(c => { state.seattleNonNull[c.column_name] = c.non_null_count; });
-    } else {
-      state.seattleNonNull = {};
+    let sample = [];
+    if (snapshotDate) {
+      const { data, error: sampleErr } = await supabaseClient
+        .from("raw_watchlist_jobs").select("*")
+        .eq("snapshot_date", snapshotDate)
+        .limit(10);
+      if (sampleErr) throw sampleErr;
+      sample = data || [];
     }
-
-    const { data: sample, error: sampleErr } = await supabaseClient
-      .from("job_content").select("*")
-      .order("last_seen", { ascending: false })
-      .limit(10);
-    if (sampleErr) throw sampleErr;
-    state.sampleRows = sample || [];
+    state.sampleRows = sample;
 
     render();
     document.getElementById("loading").style.display = "none";
@@ -411,7 +363,7 @@ function render() {
   const latest = state.latest;
 
   document.getElementById("sub").textContent =
-    "Nightly storage and shape monitoring for job_content, the per-job dimension table upserted on (watchlist_company, ats_id).";
+    "Nightly storage and shape monitoring for raw_watchlist_jobs, the immutable daily snapshot fact table keyed by (snapshot_date, watchlist_company, ats_id).";
 
   document.getElementById("headerCards").innerHTML =
     statCard("Rows", latest.row_count.toLocaleString()) +
@@ -433,26 +385,15 @@ function render() {
   if (mind && maxd) {
     const days = Math.round((new Date(maxd) - new Date(mind)) / 86400000) + 1;
     document.getElementById("recencyHint").innerHTML =
-      "Recency window (based on <code>last_seen</code>): " + fmtDate(mind) + " to " + fmtDate(maxd) + " (" + days + " days). " +
-      "job_content has no snapshot_date &mdash; rows are overwritten in place, so this window reflects when each job was last observed, not a historical row count.";
+      "Recency window (based on <code>snapshot_date</code>): " + fmtDate(mind) + " to " + fmtDate(maxd) + " (" + days + " days). " +
+      "The loader prunes snapshots older than 14 days, so this window is expected to hover around 14 days rather than grow indefinitely.";
   }
 
   document.getElementById("breadthHint").innerHTML =
-    state.columns.length + " columns, " + latest.row_count.toLocaleString() + " rows as of " + fmtDate(latest.captured_date) +
-    ". Sorted by overall non-null%. Note: <code>description</code> and <code>raw</code> are only retained for Seattle/remote-WA-relevant " +
-    "postings &mdash; their low overall non-null% is expected, not missing data" +
-    (state.seattleRowCount != null
-      ? "; the \"Seattle+Remote\" column shows non-null% restricted to that " + state.seattleRowCount.toLocaleString() + "-row subset, where it matters."
-      : ".");
+    state.columns.length + " columns, " + latest.row_count.toLocaleString() + " rows as of " + fmtDate(latest.captured_date) + ". Sorted by non-null%.";
 
   const sortedColumns = state.columns
-    .map(c => ({
-      ...c,
-      pct: latest.row_count ? (c.non_null_count / latest.row_count) * 100 : 0,
-      seattlePct: (state.seattleRowCount && c.column_name in state.seattleNonNull)
-        ? (state.seattleNonNull[c.column_name] / state.seattleRowCount) * 100
-        : null
-    }))
+    .map(c => ({ ...c, pct: latest.row_count ? (c.non_null_count / latest.row_count) * 100 : 0 }))
     .sort((a, b) => b.pct - a.pct);
 
   renderBarList("nonNullBars",
@@ -460,10 +401,9 @@ function render() {
     v => v.toFixed(1) + "%");
   document.getElementById("columnTbody").innerHTML = sortedColumns.map(c => {
     return '<tr>' +
-      '<td>' + esc(c.column_name) + (LARGE_FIELDS.includes(c.column_name) ? ' <span class="badge wa">large</span>' : '') + '</td>' +
+      '<td>' + esc(c.column_name) + '</td>' +
       '<td class="loc">' + esc(c.data_type) + '</td>' +
       '<td class="loc">' + c.pct.toFixed(1) + '%</td>' +
-      '<td class="loc">' + (c.seattlePct == null ? "-" : c.seattlePct.toFixed(1) + "%") + '</td>' +
       '<td class="loc">' + (c.distinct_count == null ? "-" : Number(c.distinct_count).toLocaleString()) + '</td>' +
       '<td class="loc">' + (c.avg_len == null ? "-" : Number(c.avg_len).toFixed(1)) + '</td>' +
       '<td class="loc">' + (c.max_len == null ? "-" : c.max_len) + '</td>' +

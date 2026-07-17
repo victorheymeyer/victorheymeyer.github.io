@@ -105,6 +105,7 @@ h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
 
 #chartWrap { width: 100%; overflow-x: auto; }
 canvas { display: block; }
+.table-scroll { width: 100%; overflow-x: auto; }
 
 .controls { display: flex; flex-wrap: wrap; gap: var(--sp-10); align-items: center; margin-bottom: var(--sp-14); }
 .controls input[type="text"], .controls select {
