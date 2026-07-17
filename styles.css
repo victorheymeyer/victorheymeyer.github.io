@@ -215,6 +215,32 @@ td a:hover { text-decoration: underline; }
 .lightbox-nav:hover { border-color: var(--accent); color: var(--accent); }
 .lightbox-nav[hidden] { display: none; }
 
+/* ---- Table stats pages (per-table monitoring: depth/breadth/storage) ---- */
+.chartpair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-16); margin-bottom: var(--sp-10); }
+.chart-label { color: var(--muted); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-6); }
+.substep { font-size: var(--fs-sm); color: var(--text); margin: var(--sp-18) 0 var(--sp-4); }
+
+.barlist { display: flex; flex-direction: column; gap: var(--sp-6); margin-bottom: var(--sp-14); }
+.barrow { display: grid; grid-template-columns: 140px 1fr 90px; align-items: center; gap: var(--sp-10); font-size: var(--fs-xs); }
+.barrow-label { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barrow-track { background: var(--panel-2); border-radius: var(--radius-xs); height: 10px; overflow: hidden; }
+.barrow-fill { background: var(--accent); height: 100%; border-radius: var(--radius-xs); }
+.barrow-value { color: var(--text); text-align: right; white-space: nowrap; }
+
+.splitbar { display: flex; height: 22px; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border); margin-bottom: var(--sp-10); }
+.splitbar > div { height: 100%; }
+.seg-heap { background: var(--accent); }
+.seg-toast { background: var(--warn); }
+.seg-index { background: var(--good); }
+.split-legend { display: flex; flex-wrap: wrap; gap: var(--sp-16); font-size: var(--fs-xs); color: var(--muted); margin-bottom: var(--sp-6); }
+.legend-item { display: inline-flex; align-items: center; gap: var(--sp-6); }
+.legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+
+@media (max-width: 600px) {
+  .chartpair { grid-template-columns: 1fr; }
+  .barrow { grid-template-columns: 90px 1fr 70px; }
+}
+
 @media (max-width: 600px) {
   .lightbox-nav { width: 36px; height: 36px; font-size: 18px; }
   .lightbox-overlay { gap: var(--sp-8); padding: var(--sp-12); }

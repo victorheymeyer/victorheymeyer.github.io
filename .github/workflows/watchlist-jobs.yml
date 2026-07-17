@@ -23,3 +23,9 @@ jobs:
           JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
           JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
         run: python projects/watchlist-jobs/fetch_watchlist_jobs.py
+
+      - name: Capture table stats
+        env:
+          JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
+          JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
+        run: python projects/watchlist-jobs/capture_table_stats.py
