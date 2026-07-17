@@ -1,0 +1,31 @@
+name: Capture Table Stats
+
+# Runs well after the day's loader (09:00 UTC) and, more importantly, after
+# the pg_cron VACUUM FULL jobs on job_content (11:59 UTC) and
+# raw_watchlist_jobs (12:00 UTC) — both routinely finish within ~15 seconds.
+# Capturing before those crons run would snapshot post-upsert dead-tuple
+# bloat (nearly 1 dead tuple per live row on a day with no vacuum yet)
+# instead of the table's settled size.
+on:
+  schedule:
+    - cron: "15 12 * * *"   # daily at 12:15 UTC
+  workflow_dispatch:
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r projects/watchlist-jobs/requirements.txt
+
+      - name: Capture table stats
+        env:
+          JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
+          JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
+        run: python projects/watchlist-jobs/capture_table_stats.py
