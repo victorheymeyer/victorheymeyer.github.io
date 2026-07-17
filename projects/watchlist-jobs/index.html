@@ -215,21 +215,25 @@ function fmtSalary(r) {
 async function init() {
   try {
     // latest and earliest snapshot dates, fetched in parallel instead of
-    // as two sequential round trips
+    // as two sequential round trips. Queried against raw_watchlist_jobs (not
+    // the jobs_location_flags view) so idx_raw_watchlist_jobs_snapshot_date
+    // makes this an index scan instead of a full join expansion.
     const [{ data: latest, error: e1 }, { data: earliest }] = await Promise.all([
-      supabaseClient.from("jobs_location_flags").select("snapshot_date")
+      supabaseClient.from("raw_watchlist_jobs").select("snapshot_date")
         .order("snapshot_date", { ascending: false }).limit(1),
-      supabaseClient.from("jobs_location_flags").select("snapshot_date")
+      supabaseClient.from("raw_watchlist_jobs").select("snapshot_date")
         .order("snapshot_date", { ascending: true }).limit(1)
     ]);
     if (e1) throw e1;
-    if (!latest || !latest.length) { showError("No rows found in jobs_location_flags."); return; }
+    if (!latest || !latest.length) { showError("No rows found in raw_watchlist_jobs."); return; }
     state.snapshotDate = latest[0].snapshot_date;
     state.earliestDate = earliest && earliest.length ? earliest[0].snapshot_date : state.snapshotDate;
 
-    // all rows for the latest snapshot
+    // all rows for the latest snapshot. No server-side order here: the table
+    // has no sort-friendly index for it and the rows get re-sorted client-side
+    // by days-old in renderTable() anyway, so a server sort is wasted work.
     state.rows = await fetchAllRows("jobs_location_flags", LIST_COLUMNS, (q) =>
-      q.eq("snapshot_date", state.snapshotDate).order("watchlist_company", { ascending: true }).order("title", { ascending: true })
+      q.eq("snapshot_date", state.snapshotDate)
     );
 
     document.getElementById("loading").style.display = "none";
