@@ -73,11 +73,11 @@ function fmtBytes(n) {
   return (i === 0 ? v : v.toFixed(1)) + " " + units[i];
 }
 
-function fmtDateTime(ts) {
-  if (!ts) return "";
-  const dt = new Date(ts);
-  if (isNaN(dt)) return ts;
-  return dt.toLocaleString();
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return d;
+  return (dt.getMonth() + 1) + "/" + dt.getDate() + "/" + dt.getFullYear();
 }
 
 function statChip(label, value) {
@@ -86,7 +86,7 @@ function statChip(label, value) {
 
 async function loadStats(tableName) {
   const { data, error } = await supabaseClient
-    .from("table_stats").select("captured_date,row_count,total_bytes,captured_at")
+    .from("table_stats").select("captured_date,row_count,total_bytes,dead_tuples,captured_at")
     .eq("table_name", tableName)
     .order("captured_date", { ascending: false })
     .limit(2);
@@ -97,6 +97,7 @@ async function loadStats(tableName) {
   const latest = rows[0];
   const stats = [
     { label: "Rows", value: latest.row_count.toLocaleString() },
+    { label: "Dead tuples", value: (latest.dead_tuples || 0).toLocaleString() },
     { label: "Total size", value: fmtBytes(latest.total_bytes) }
   ];
 
@@ -107,7 +108,7 @@ async function loadStats(tableName) {
     stats.push({ label: "Rows/day", value: (perDay > 0 ? "+" : "") + perDay.toLocaleString() });
   }
 
-  stats.push({ label: "Last captured", value: fmtDateTime(latest.captured_at) });
+  stats.push({ label: "Last captured", value: fmtDate(latest.captured_date) });
   return stats;
 }
 
