@@ -25,7 +25,7 @@ TARGETS = [
         "p_columns_only": True,
     },
     {"p_table": "raw_watchlist_jobs", "p_date_col": "snapshot_date"},
-    # {"p_table": "watchlist_companies"},
+    {"p_table": "watchlist_companies"},
     # {"p_table": "ats_company_directory"},
 ]
 
