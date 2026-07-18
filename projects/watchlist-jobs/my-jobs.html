@@ -24,6 +24,7 @@
         <div class="msdd" data-key="role"></div>
         <div class="msdd" data-key="level"></div>
         <div class="msdd" data-key="daysOld"></div>
+        <div class="msdd" data-key="postStatus"></div>
         <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level filters marked Y in the classifier rules">Target Filters</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
@@ -55,6 +56,7 @@
         <div class="msdd" data-key="role"></div>
         <div class="msdd" data-key="level"></div>
         <div class="msdd" data-key="daysOld"></div>
+        <div class="msdd" data-key="postStatus"></div>
         <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level filters marked Y in the classifier rules">Target Filters</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
@@ -91,7 +93,8 @@ const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
   "department","employment_type","salary_min","salary_max","salary_currency",
   "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
-  "discipline","role_keyword","level","description_last_change","description_change_count"
+  "discipline","role_keyword","level","description_last_change","description_change_count",
+  "post_status"
 ].join(",");
 
 // Sentinel value for the "(unclassified)" option in the classifier dropdowns
@@ -418,7 +421,7 @@ function initJobsPanel(panelEl) {
     rows: [],
     snapshotDate: null,
     descCache: {},
-    filters: { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [] },
+    filters: { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] },
     page: 1,
     pageSize: 10,
     expanded: null,
@@ -483,6 +486,7 @@ function initJobsPanel(panelEl) {
     buildMultiSelect('[data-key="role"]', "role_keyword", "role", "All roles");
     buildMultiSelect('[data-key="level"]', "level", "level", "All levels");
     buildDaysOldSelect('[data-key="daysOld"]', "daysOld", "All ages");
+    buildMultiSelect('[data-key="postStatus"]', "post_status", "postStatus", "All statuses");
 
     $(".panel").style.display = "block";
 
@@ -582,6 +586,7 @@ function initJobsPanel(panelEl) {
       if (!classifierMatch(f.role, r.role_keyword)) return false;
       if (!classifierMatch(f.level, r.level)) return false;
       if (!daysOldMatch(f.daysOld, r)) return false;
+      if (!classifierMatch(f.postStatus, r.post_status)) return false;
       if (f.wa || f.remote) {
         const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_wa);
         if (!ok) return false;
@@ -761,12 +766,12 @@ function initJobsPanel(panelEl) {
     $(".waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
     $(".remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
     $('[data-action="clear"]').onclick = () => {
-      state.filters = { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [] };
+      state.filters = { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] };
       state.page = 1;
       search.value = ""; sel.value = "";
       $(".waChk").checked = false;
       $(".remChk").checked = false;
-      ['[data-key="discipline"]', '[data-key="role"]', '[data-key="level"]', '[data-key="daysOld"]'].forEach(s => { const c = $(s); if (c && c._reset) c._reset(); });
+      ['[data-key="discipline"]', '[data-key="role"]', '[data-key="level"]', '[data-key="daysOld"]', '[data-key="postStatus"]'].forEach(s => { const c = $(s); if (c && c._reset) c._reset(); });
       renderTable();
     };
     // close any open dropdown when clicking elsewhere
