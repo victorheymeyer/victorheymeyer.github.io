@@ -6,7 +6,6 @@
 <title>Watchlist Jobs</title>
 <link rel="stylesheet" href="/styles.css">
 <script defer src="/site.js"></script>
-<script defer src="/job-detail.js"></script>
 </head>
 <body>
 <div id="siteNav"></div>
@@ -39,17 +38,6 @@
     <div class="pager" id="pager"></div>
   </div>
 
-  <div class="panel" id="chartPanel" style="display:none">
-    <h2>Openings by company</h2>
-    <p class="hint">Click a bar to filter the list above to that company.</p>
-    <div id="chartWrap"><canvas id="chart"></canvas></div>
-  </div>
-
-  <div class="panel" id="freshnessPanel" style="display:none">
-    <h2>Freshness signals</h2>
-    <p class="hint" id="freshnessHint"></p>
-  </div>
-
   <div class="loading" id="loading">Connecting to Supabase...</div>
 
   <footer class="site-footer">
@@ -58,7 +46,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <script>
 // ---- Config ----
 const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
@@ -67,25 +54,26 @@ const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 
 const LIST_COLUMNS = [
-  "snapshot_date","watchlist_company","ats_id","ats_type","title","location",
-  "department","team","employment_type","is_remote","salary_min","salary_max","salary_currency",
-  "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
-  "discipline","role_keyword","level","description_last_change","description_change_count"
+  "snapshot_date","watchlist_company","ats_id","title","location",
+  "posted_at","url","apply_url","maybe_wa","maybe_remote_wa",
+  "discipline","role_keyword","level"
 ].join(",");
 
 const state = {
   rows: [],
   snapshotDate: null,
-  earliestDate: null,
-  dayCount: 0,
-  descCache: {},
   filters: { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [] },
   page: 1,
-  pageSize: 10,
-  expanded: null
+  pageSize: 10
 };
 
 // ---- Helpers ----
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function showError(msg) {
   document.getElementById("errBox").innerHTML =
     '<div class="err"><strong>Could not load data.</strong><br>' + msg +
@@ -129,8 +117,6 @@ async function fetchAllRows(table, selectCols, applyFilters) {
   return all;
 }
 
-// Used for the page-level "Snapshot"/freshness header text, not the detail
-// panel (that formatting lives in /job-detail.js now).
 function fmtDate(d) {
   if (!d) return "";
   const dt = new Date(d);
@@ -151,20 +137,14 @@ function daysOld(posted) {
 // ---- Data load ----
 async function init() {
   try {
-    // latest and earliest snapshot dates, fetched in parallel instead of
-    // as two sequential round trips. Queried against raw_watchlist_jobs (not
-    // the jobs_location_flags view) so idx_raw_watchlist_jobs_snapshot_date
+    // latest snapshot date. Queried against raw_watchlist_jobs (not the
+    // jobs_location_flags view) so idx_raw_watchlist_jobs_snapshot_date
     // makes this an index scan instead of a full join expansion.
-    const [{ data: latest, error: e1 }, { data: earliest }] = await Promise.all([
-      supabaseClient.from("raw_watchlist_jobs").select("snapshot_date")
-        .order("snapshot_date", { ascending: false }).limit(1),
-      supabaseClient.from("raw_watchlist_jobs").select("snapshot_date")
-        .order("snapshot_date", { ascending: true }).limit(1)
-    ]);
+    const { data: latest, error: e1 } = await supabaseClient.from("raw_watchlist_jobs").select("snapshot_date")
+      .order("snapshot_date", { ascending: false }).limit(1);
     if (e1) throw e1;
     if (!latest || !latest.length) { showError("No rows found in raw_watchlist_jobs."); return; }
     state.snapshotDate = latest[0].snapshot_date;
-    state.earliestDate = earliest && earliest.length ? earliest[0].snapshot_date : state.snapshotDate;
 
     // all rows for the latest snapshot. No server-side order here: the table
     // has no sort-friendly index for it and the rows get re-sorted client-side
@@ -182,12 +162,6 @@ async function init() {
   }
 }
 
-function dayCount() {
-  const a = new Date(state.earliestDate), b = new Date(state.snapshotDate);
-  const days = Math.round((b - a) / 86400000) + 1;
-  return isNaN(days) ? 1 : days;
-}
-
 // ---- Render ----
 function render() {
   document.getElementById("sub").textContent =
@@ -203,15 +177,6 @@ function render() {
     card(wa, "WA Jobs") +
     card(rem, "Remote-WA Jobs");
 
-  // freshness
-  const days = dayCount();
-  document.getElementById("freshnessPanel").style.display = "block";
-  document.getElementById("freshnessHint").innerHTML =
-    "History so far: <strong>" + days + (days === 1 ? " day" : " days") + "</strong> (" + fmtDate(state.earliestDate) +
-    " to " + fmtDate(state.snapshotDate) + "). Time signals (how long a role has been open, and whether it was recently edited) " +
-    "become meaningful as snapshots accumulate. With one day of history every role's first-seen is the same date, which is expected, not a bug. " +
-    "The how-long-open and recently-edited views will be added here once several days exist.";
-
   // company dropdown
   const sel = document.getElementById("companySel");
   const companies = Array.from(new Set(state.rows.map(r => r.watchlist_company))).sort();
@@ -223,10 +188,8 @@ function render() {
   buildMultiSelect("roleDD", "role_keyword", "role", "All roles");
   buildMultiSelect("levelDD", "level", "level", "All levels");
 
-  document.getElementById("chartPanel").style.display = "block";
   document.getElementById("listPanel").style.display = "block";
 
-  drawChart();
   renderTable();
   wireControls();
 }
@@ -244,7 +207,7 @@ function buildMultiSelect(containerId, dataField, filterKey, allLabel) {
   container.innerHTML =
     '<button type="button" class="msdd-btn"></button>' +
     '<div class="msdd-panel" hidden>' +
-      values.map(v => '<label class="msdd-opt"><input type="checkbox" value="' + JobDetail.esc(v) + '"> ' + JobDetail.esc(v) + '</label>').join("") +
+      values.map(v => '<label class="msdd-opt"><input type="checkbox" value="' + esc(v) + '"> ' + esc(v) + '</label>').join("") +
       (hasNull ? '<label class="msdd-opt"><input type="checkbox" value="' + UNCLASSIFIED + '"> (unclassified)</label>' : "") +
     '</div>';
   const btn = container.querySelector(".msdd-btn");
@@ -278,63 +241,6 @@ function buildMultiSelect(containerId, dataField, filterKey, allLabel) {
   container._reset = () => {
     panel.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
     updateLabel();
-  };
-}
-
-let chartGeom = [];
-function drawChart() {
-  const counts = {};
-  state.rows.forEach(r => { counts[r.watchlist_company] = (counts[r.watchlist_company] || 0) + 1; });
-  const data = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-
-  const canvas = document.getElementById("chart");
-  const rowH = 26, padTop = 6, padBottom = 6, labelW = 130, valW = 60;
-  const cssW = Math.max(700, (document.getElementById("chartWrap").clientWidth || 700));
-  const cssH = padTop + padBottom + data.length * rowH;
-  const dpr = window.devicePixelRatio || 1;
-  canvas.style.width = cssW + "px";
-  canvas.style.height = cssH + "px";
-  canvas.width = cssW * dpr;
-  canvas.height = cssH * dpr;
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, cssW, cssH);
-
-  const max = data.length ? data[0][1] : 1;
-  const barAreaW = cssW - labelW - valW - 12;
-  chartGeom = [];
-
-  ctx.font = "12px -apple-system, Segoe UI, Roboto, sans-serif";
-  ctx.textBaseline = "middle";
-  data.forEach(([company, n], i) => {
-    const y = padTop + i * rowH;
-    const cy = y + rowH / 2;
-    ctx.fillStyle = "#9aa3b2";
-    ctx.textAlign = "right";
-    ctx.fillText(company, labelW - 8, cy);
-
-    const w = Math.max(2, (n / max) * barAreaW);
-    ctx.fillStyle = company === state.filters.company ? "#7db4ff" : "#4f9cff";
-    ctx.fillRect(labelW, y + 4, w, rowH - 8);
-
-    ctx.fillStyle = "#e6e8ec";
-    ctx.textAlign = "left";
-    ctx.fillText(n.toLocaleString(), labelW + w + 6, cy);
-
-    chartGeom.push({ company, y, h: rowH });
-  });
-
-  canvas.onclick = (ev) => {
-    const rect = canvas.getBoundingClientRect();
-    const my = ev.clientY - rect.top;
-    const hit = chartGeom.find(g => my >= g.y && my < g.y + g.h);
-    if (hit) {
-      state.filters.company = state.filters.company === hit.company ? "" : hit.company;
-      document.getElementById("companySel").value = state.filters.company;
-      state.page = 1;
-      drawChart();
-      renderTable();
-    }
   };
 }
 
@@ -386,26 +292,19 @@ function renderTable() {
   const tbody = document.getElementById("tbody");
   tbody.innerHTML = "";
   slice.forEach(r => {
-    const key = r.watchlist_company + "::" + r.ats_id;
     const link = r.apply_url || r.url;
     const badges =
       (r.maybe_wa ? '<span class="badge wa">WA</span>' : "") +
       (r.maybe_remote_wa ? '<span class="badge rem">Remote</span>' : "");
     const dOld = daysOld(r.posted_at);
     const tr = document.createElement("tr");
-    tr.className = "jobrow";
     tr.innerHTML =
-      '<td class="company">' + JobDetail.esc(r.watchlist_company) + '</td>' +
-      '<td title="' + JobDetail.esc(r.title || "") + '">' + JobDetail.esc(r.title || "(no title)") + badges + '</td>' +
-      '<td class="loc" title="' + JobDetail.esc(r.location || "") + '">' + JobDetail.esc(r.location || "") + '</td>' +
+      '<td class="company">' + esc(r.watchlist_company) + '</td>' +
+      '<td title="' + esc(r.title || "") + '">' + esc(r.title || "(no title)") + badges + '</td>' +
+      '<td class="loc" title="' + esc(r.location || "") + '">' + esc(r.location || "") + '</td>' +
       '<td class="loc">' + (dOld == null ? "-" : dOld) + '</td>' +
-      '<td>' + (link ? '<a href="' + JobDetail.esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
-    tr.onclick = () => toggleRow(key, r, tr);
+      '<td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">view</a>' : "") + '</td>';
     tbody.appendChild(tr);
-
-    if (state.expanded === key) {
-      appendDetail(tbody, key, r);
-    }
   });
 
   renderPager(total, pages);
@@ -450,43 +349,11 @@ function renderPager(total, pages) {
   p.appendChild(last);
 }
 
-function toggleRow(key, r, tr) {
-  state.expanded = (state.expanded === key) ? null : key;
-  renderTable();
-}
-
-async function appendDetail(tbody, key, r) {
-  let tr = JobDetail.render(r);
-  tr.querySelector("td").colSpan = 5;
-  tbody.appendChild(tr);
-
-  try {
-    let cached = state.descCache[key];
-    if (cached === undefined) {
-      const { data, error } = await supabaseClient
-        .from("job_content").select("description, location")
-        .eq("watchlist_company", r.watchlist_company).eq("ats_id", r.ats_id).limit(1);
-      if (error) throw error;
-      cached = (data && data.length) ? { description: data[0].description, location: data[0].location } : { description: null, location: null };
-      state.descCache[key] = cached;
-    }
-    const updated = JobDetail.render(r, cached.description, cached.location);
-    updated.querySelector("td").colSpan = 5;
-    tr.replaceWith(updated);
-    tr = updated;
-  } catch (err) {
-    const target = tr.querySelector(".desc");
-    const locTarget = tr.querySelector(".locval");
-    if (locTarget) locTarget.textContent = "N/A";
-    if (target) target.textContent = "Could not load description: " + ((err && err.message) ? err.message : String(err));
-  }
-}
-
 function wireControls() {
   const search = document.getElementById("search");
   search.oninput = () => { state.filters.search = search.value; state.page = 1; renderTable(); };
   const sel = document.getElementById("companySel");
-  sel.onchange = () => { state.filters.company = sel.value; state.page = 1; drawChart(); renderTable(); };
+  sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); };
   document.getElementById("waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("clearBtn").onclick = () => {
@@ -496,7 +363,7 @@ function wireControls() {
     document.getElementById("waChk").checked = false;
     document.getElementById("remChk").checked = false;
     ["disciplineDD", "roleDD", "levelDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
-    drawChart(); renderTable();
+    renderTable();
   };
   // close any open dropdown when clicking elsewhere
   document.addEventListener("click", () => {
@@ -504,7 +371,6 @@ function wireControls() {
   });
 }
 
-window.addEventListener("resize", () => { if (state.rows.length) drawChart(); });
 init();
 </script>
 </body>
