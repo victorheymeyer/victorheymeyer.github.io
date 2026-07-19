@@ -143,13 +143,6 @@ td a:hover { text-decoration: underline; }
 .detail .meta { color: var(--muted); font-size: var(--fs-xs); margin-bottom: var(--sp-10); }
 .detail .metaline { margin-bottom: var(--sp-3); }
 .detail .meta .lbl { color: var(--accent-light); font-weight: 700; }
-.detail .desc { color: var(--text); background: #0e1119; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-14) var(--sp-16); font-size: var(--fs-sm); max-height: 420px; overflow: auto; }
-.detail .desc * { color: inherit; }
-.detail .desc p { margin: 0 0 var(--sp-10); }
-.detail .desc ul, .detail .desc ol { margin: 0 0 var(--sp-10); padding-left: var(--sp-20); }
-.detail .desc li { margin-bottom: var(--sp-4); }
-.detail .desc a { color: var(--accent); }
-.detail .desc h1, .detail .desc h2, .detail .desc h3 { font-size: var(--fs-base); margin: var(--sp-12) 0 var(--sp-6); }
 
 .pager { display: flex; gap: var(--sp-10); align-items: center; margin-top: var(--sp-14); color: var(--muted); font-size: var(--fs-sm); }
 .pager button { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-6) var(--sp-12); cursor: pointer; }
@@ -160,6 +153,19 @@ td a:hover { text-decoration: underline; }
 .err { background: #3a1d1d; border: 1px solid #5c2b2b; color: #ffb4b4; border-radius: var(--radius); padding: var(--sp-14) var(--sp-16); margin-bottom: var(--sp-18); }
 .err code { background: rgba(0,0,0,.3); padding: 1px var(--sp-5); border-radius: var(--sp-4); }
 .loading { color: var(--muted); padding: var(--sp-20) 0; }
+
+/* ---- Job detail panel (shared component, see /job-detail.js) ----
+   .detail td/.meta/.metaline/.lbl above are generic "detail row" primitives
+   also used by the raw-table viewers under projects/watchlist-jobs/tables/,
+   so they stay in the general block. Only the description box below is
+   unique to the job detail panel, so it's scoped under .job-detail. */
+.job-detail .desc { color: var(--text); background: #0e1119; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-14) var(--sp-16); font-size: var(--fs-sm); max-height: 420px; overflow: auto; }
+.job-detail .desc * { color: inherit; }
+.job-detail .desc p { margin: 0 0 var(--sp-10); }
+.job-detail .desc ul, .job-detail .desc ol { margin: 0 0 var(--sp-10); padding-left: var(--sp-20); }
+.job-detail .desc li { margin-bottom: var(--sp-4); }
+.job-detail .desc a { color: var(--accent); }
+.job-detail .desc h1, .job-detail .desc h2, .job-detail .desc h3 { font-size: var(--fs-base); margin: var(--sp-12) 0 var(--sp-6); }
 
 /* ---- Shared hero header (site name, subtitle, avatar) ---- */
 .hero { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-24); margin-bottom: var(--sp-24); }
