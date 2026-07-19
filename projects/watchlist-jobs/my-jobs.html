@@ -91,7 +91,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 
 const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
-  "department","employment_type","salary_min","salary_max","salary_currency",
+  "department","team","employment_type","is_remote","salary_min","salary_max","salary_currency",
   "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
   "discipline","role_keyword","level","description_last_change","description_change_count",
   "post_status"
@@ -698,11 +698,12 @@ function initJobsPanel(panelEl) {
     const td = document.createElement("td");
     td.colSpan = 5 - (hideDepartment ? 1 : 0) - (hideDaysOld ? 1 : 0);
 
-    const dept = r.department ? esc(r.department) : "TBD";
-    const posted = r.posted_at ? fmtDate(r.posted_at) : "TBD";
+    const dept = r.department ? esc(r.department) : "N/A";
+    const team = r.team ? esc(r.team) : "N/A";
+    const posted = r.posted_at ? fmtDate(r.posted_at) : "N/A";
     const lastSeen = fmtDate(r.snapshot_date);
-    const firstSeen = r.first_seen ? fmtDate(r.first_seen) : "TBD";
-    const ats = r.ats_type ? esc(r.ats_type) : "TBD";
+    const firstSeen = r.first_seen ? fmtDate(r.first_seen) : "N/A";
+    const ats = r.ats_type ? esc(r.ats_type) : "N/A";
     const atsId = esc(r.ats_id || "");
     const lastDescChange = r.description_last_change ? fmtDate(r.description_last_change) : "-";
     const descChangeCount = r.description_change_count != null ? r.description_change_count : "-";
@@ -711,17 +712,25 @@ function initJobsPanel(panelEl) {
     const roleKw = r.role_keyword ? esc(r.role_keyword) : "-";
     const lvl = r.level ? esc(r.level) : "-";
 
+    const employmentType = r.employment_type ? esc(r.employment_type) : "N/A";
+    const isRemoteLabel = r.is_remote === true ? "Yes" : (r.is_remote === false ? "No" : "N/A");
+    const salary = fmtSalary(r) || "N/A";
+
     const meta =
       '<div class="metaline"><span class="lbl">Job Info:</span> Dept: ' + dept +
+        ' | Team: ' + team +
         ' | Location: <span class="locval">Loading...</span></div>' +
       '<div class="metaline"><span class="lbl">Classification:</span> Discipline: ' + disc +
         ' | Role: ' + roleKw +
         ' | Level: ' + lvl + '</div>' +
-      '<div class="metaline"><span class="lbl">Dates:</span> First Posted (ATS.ID): ' + posted +
+      '<div class="metaline"><span class="lbl">Dates:</span> Posted: ' + posted +
         ' | Last Seen: ' + lastSeen +
         ' | First Seen: ' + firstSeen +
         ' | Last Desc Change: ' + lastDescChange +
         ' | Char # delta: ' + descChangeCount + '</div>' +
+      '<div class="metaline"><span class="lbl">Other:</span> Type: ' + employmentType +
+        ' | Remote: ' + isRemoteLabel +
+        ' | Salary: ' + salary + '</div>' +
       '<div class="metaline"><span class="lbl">ATS:</span> ' + ats +
         ' | ATS Job ID: ' + atsId + '</div>';
 
@@ -741,11 +750,11 @@ function initJobsPanel(panelEl) {
         cached = (data && data.length) ? { description: data[0].description, location: data[0].location } : { description: null, location: null };
         state.descCache[key] = cached;
       }
-      if (locTarget) locTarget.textContent = cached.location || "TBD";
+      if (locTarget) locTarget.textContent = cached.location || "N/A";
       if (cached.description) { target.innerHTML = renderDescription(cached.description); }
       else { target.textContent = "No description stored for this role."; }
     } catch (err) {
-      if (locTarget) locTarget.textContent = "TBD";
+      if (locTarget) locTarget.textContent = "N/A";
       target.textContent = "Could not load description: " + ((err && err.message) ? err.message : String(err));
     }
   }
