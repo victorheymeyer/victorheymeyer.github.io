@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Private</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>Private</h1>
+
+  <div id="loadingBox" class="loading">Checking session...</div>
+
+  <div id="loginBox" class="panel authbox" style="display:none">
+    <h2>Sign in</h2>
+    <div id="loginErr"></div>
+    <form id="loginForm">
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="clearbtn">Sign in</button>
+    </form>
+  </div>
+
+  <div id="accountBox" class="panel authbox" style="display:none">
+    <h2>Account</h2>
+    <p class="meta">Signed in as <strong id="acctEmail"></strong></p>
+    <p class="meta">Plan: <strong id="acctPlan"></strong></p>
+    <button id="signOutBtn" class="clearbtn">Sign out</button>
+  </div>
+
+  <footer class="site-footer">
+    <p>© 2026 Victor Heymeyer | Seattle, WA |<a href="https://www.linkedin.com/in/heymeyer/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> </p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+const loadingBox = document.getElementById("loadingBox");
+const loginBox = document.getElementById("loginBox");
+const accountBox = document.getElementById("accountBox");
+const loginErr = document.getElementById("loginErr");
+const loginForm = document.getElementById("loginForm");
+const signOutBtn = document.getElementById("signOutBtn");
+
+function showError(msg) {
+  loginErr.innerHTML = "";
+  if (!msg) return;
+  const div = document.createElement("div");
+  div.className = "err";
+  div.textContent = msg;
+  loginErr.appendChild(div);
+}
+
+function showLoggedOut() {
+  loadingBox.style.display = "none";
+  accountBox.style.display = "none";
+  loginBox.style.display = "";
+}
+
+async function showLoggedIn(session) {
+  loadingBox.style.display = "none";
+  loginBox.style.display = "none";
+  accountBox.style.display = "";
+  document.getElementById("acctEmail").textContent = session.user.email;
+
+  const { data, error } = await supabaseClient.from("profiles").select("*").single();
+  document.getElementById("acctPlan").textContent = error ? "(error loading profile)" : data.plan;
+  if (error) console.error(error);
+}
+
+async function render() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session) await showLoggedIn(session);
+  else showLoggedOut();
+}
+
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  showError(null);
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) showError(error.message);
+});
+
+signOutBtn.addEventListener("click", () => supabaseClient.auth.signOut());
+
+supabaseClient.auth.onAuthStateChange((_event, session) => {
+  if (session) showLoggedIn(session);
+  else showLoggedOut();
+});
+
+render();
+</script>
+</body>
+</html>
