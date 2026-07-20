@@ -222,8 +222,8 @@ function renderCriteriaBar() {
     bar.innerHTML = "Saved on this device — " +
       '<a href="/private/">sign in</a> to keep your criteria across devices.';
   } else {
-    bar.style.display = "none";
-    bar.textContent = "";
+    bar.style.display = "";
+    bar.innerHTML = '<a href="/private/">Sign in</a> to save your search criteria.';
   }
 }
 
