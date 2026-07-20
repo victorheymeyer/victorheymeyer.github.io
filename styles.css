@@ -222,6 +222,10 @@ td a:hover { text-decoration: underline; }
 .lightbox-nav:hover { border-color: var(--accent); color: var(--accent); }
 .lightbox-nav[hidden] { display: none; }
 
+/* ---- Saved-criteria source indicator (see /projects/watchlist-jobs/my-jobs.html) ---- */
+.criteria-bar { color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--sp-14); }
+.criteria-bar a { color: var(--accent); }
+
 /* ---- Auth (login gate, see /private/) ---- */
 .authbox { max-width: 360px; }
 .authbox .field { margin-bottom: var(--sp-14); }

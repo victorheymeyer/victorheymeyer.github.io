@@ -11,6 +11,8 @@
 <body>
 <div id="siteNav"></div>
 <div class="wrap">
+  <div id="criteriaBar" class="criteria-bar" style="display:none"></div>
+
   <div class="jobsPanel" data-preset="target-today" data-hide-department="true" data-show-all="true" data-hide-days-old="true">
     <div class="sub">Loading the latest snapshot...</div>
 
@@ -26,7 +28,7 @@
         <div class="msdd" data-key="level"></div>
         <div class="msdd" data-key="daysOld"></div>
         <div class="msdd" data-key="postStatus"></div>
-        <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level filters marked Y in the classifier rules">Target Filters</button>
+        <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level values from your saved criteria">Target Filters</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
         <button class="clearbtn" data-action="clear">Clear</button>
@@ -58,10 +60,12 @@
         <div class="msdd" data-key="level"></div>
         <div class="msdd" data-key="daysOld"></div>
         <div class="msdd" data-key="postStatus"></div>
-        <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level filters marked Y in the classifier rules">Target Filters</button>
+        <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level values from your saved criteria">Target Filters</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
         <button class="clearbtn" data-action="clear">Clear</button>
+        <button class="clearbtn" id="saveCriteriaBtn" style="display:none">Save criteria</button>
+        <span class="hint" id="saveCriteriaMsg"></span>
       </div>
       <div class="hint count"></div>
       <table>
@@ -100,33 +104,8 @@ const LIST_COLUMNS = [
 
 // Sentinel value for the "(unclassified)" option in the classifier dropdowns
 // (matches rows where discipline/role_keyword/level is null). Declared here,
-// ahead of its other use in buildMultiSelect()/classifierMatch() below, so
-// PRESET_FILTERS can reference it.
+// ahead of its other use in buildMultiSelect()/classifierMatch() below.
 const UNCLASSIFIED = "__unclassified__";
-
-// Categories flagged "Y" in classifier_rules.xlsx (column C of each tab) — the
-// discipline/role/level values considered a target match. Values must match
-// the discipline/role_keyword/level strings the classifier writes to the DB.
-const PRESET_FILTERS = {
-  discipline: [
-    "Data & Analytics", "Product Management", "Project/Program Management",
-    "Sales", "Marketing", "Finance", "Strategy", "Operations",
-    "Customer Success", "Other"
-  ],
-  role: [
-    "Chief of Staff", "Product Manager", "Program Manager", "Data Analyst/Analysis",
-    "Product Management", "Finance & Strategy", "Strategy & Operations",
-    "Business Planner/Planning", "Consultant", "Strategist", "Product Strategy", "Strategy",
-    "Strategic Finance", "Corp Dev", "Biz Dev", "Customer Success", "Marketing",
-    "Financial Planning", "Financing", "Treasury", "Analytics (Other)", "Finance (Other)",
-    "Analyst (Other)", "GTM (other)", "Operations (other)", "Program (Other)",
-    "Planning (other)", "Analysis (other)", UNCLASSIFIED
-  ],
-  level: [
-    "CXO", "VP", "GM", "Chief of Staff", "Senior Director", "Director", "Head of",
-    "Senior Principal", "Principal", "Staff", "Lead"
-  ]
-};
 
 // Days Old filter buckets. Ranges overlap by design (e.g. "Today" is a
 // subset of "Last 3 days", which is a subset of "Last 7 days") - a row
@@ -140,6 +119,146 @@ const DAYS_OLD_OPTIONS = [
   { value: "31-60", label: "31-60 days", test: n => n >= 31 && n <= 60 },
   { value: "61+", label: "61+ days", test: n => n >= 61 }
 ];
+
+// ---- Saved criteria (accounts + local-device fallback) ----
+// Three sources, in priority order: a signed-in user's row in
+// public.user_criteria; failing that, a localStorage blob from a previous
+// logged-out visit; failing that, empty (unfiltered board). Resolved once,
+// before either .jobsPanel initializes, so there is no flash of empty
+// filters followed by a re-render once criteria arrive.
+//
+// daysOld/postStatus are deliberately NOT part of saved criteria - they
+// describe how someone is browsing right now (freshness/status), not what
+// job they want, and the daily digest (new-jobs-only) has no use for them.
+// Keeping them out of the blob means the digest and the site can never
+// drift out of sync over what "your criteria" means.
+const LOCAL_STORAGE_KEY = "watchlist_filters";
+
+function defaultFilters() {
+  return { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] };
+}
+
+// Merge a saved blob over the default shape so a blob missing a key (or an
+// unknown/missing "v") never produces undefined in state.filters. Only the
+// seven persisted keys are read from `saved`; daysOld/postStatus always come
+// from the default.
+function mergeFilters(saved) {
+  const merged = defaultFilters();
+  if (saved && typeof saved === "object") {
+    if (typeof saved.company === "string") merged.company = saved.company;
+    if (typeof saved.wa === "boolean") merged.wa = saved.wa;
+    if (typeof saved.remote === "boolean") merged.remote = saved.remote;
+    if (typeof saved.search === "string") merged.search = saved.search;
+    if (Array.isArray(saved.discipline)) merged.discipline = saved.discipline.slice();
+    if (Array.isArray(saved.role)) merged.role = saved.role.slice();
+    if (Array.isArray(saved.level)) merged.level = saved.level.slice();
+  }
+  return merged;
+}
+
+function persistedBlob(filters) {
+  return {
+    v: 1,
+    company: filters.company, wa: filters.wa, remote: filters.remote, search: filters.search,
+    discipline: filters.discipline, role: filters.role, level: filters.level
+  };
+}
+
+// "signed-in" | "local" | "none" - drives the page-level source indicator
+// and whether the Save button shows. Signed-in shows even with no saved
+// row yet (an empty row is still "yours"); "local" only when logged out
+// AND a device blob was found; "none" otherwise (no nagging).
+let uiState = "none";
+let currentSession = null;
+let currentCriteriaId = null;
+let loadedFilters = defaultFilters();
+
+async function resolveCriteria() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  currentSession = session;
+  if (session) {
+    uiState = "signed-in";
+    try {
+      const { data, error } = await supabaseClient.from("user_criteria").select("id, filters").limit(1);
+      if (error) throw error;
+      if (data && data.length) {
+        currentCriteriaId = data[0].id;
+        loadedFilters = mergeFilters(data[0].filters);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    return; // signed in: never fall back to localStorage, even on error.
+  }
+
+  const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+  if (raw) {
+    try {
+      loadedFilters = mergeFilters(JSON.parse(raw));
+      uiState = "local";
+    } catch (err) {
+      // corrupt/foreign blob under this key; ignore and fall through to empty.
+    }
+  }
+}
+
+function maybePersistLocal(filters) {
+  if (uiState === "signed-in") return; // signed-in users save explicitly, to the DB.
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(persistedBlob(filters)));
+  } catch (err) {
+    return; // storage unavailable/full - filters still work for this session.
+  }
+  if (uiState !== "local") { uiState = "local"; renderCriteriaBar(); }
+}
+
+function renderCriteriaBar() {
+  const bar = document.getElementById("criteriaBar");
+  if (uiState === "signed-in") {
+    bar.style.display = "";
+    bar.textContent = "Your saved criteria";
+  } else if (uiState === "local") {
+    bar.style.display = "";
+    bar.innerHTML = "Saved on this device — " +
+      '<a href="/private/">sign in</a> to keep your criteria across devices.';
+  } else {
+    bar.style.display = "none";
+    bar.textContent = "";
+  }
+}
+
+// Wired to the "all matching" panel only (the one with visible, interactive
+// controls) - it owns the one saved criteria set for the page.
+function wireCriteriaSave(getFilters) {
+  const btn = document.getElementById("saveCriteriaBtn");
+  const msg = document.getElementById("saveCriteriaMsg");
+  if (uiState !== "signed-in") { btn.style.display = "none"; return; }
+  btn.style.display = "";
+  btn.onclick = async () => {
+    msg.innerHTML = "";
+    btn.disabled = true;
+    try {
+      const payload = persistedBlob(getFilters());
+      if (currentCriteriaId) {
+        const { error } = await supabaseClient.from("user_criteria")
+          .update({ filters: payload, updated_at: new Date().toISOString() })
+          .eq("id", currentCriteriaId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabaseClient.from("user_criteria")
+          .insert({ user_id: currentSession.user.id, filters: payload, updated_at: new Date().toISOString() })
+          .select("id").single();
+        if (error) throw error;
+        currentCriteriaId = data.id;
+      }
+      msg.textContent = "Saved.";
+    } catch (err) {
+      msg.innerHTML = '<div class="err">Could not save: ' + JobDetail.esc((err && err.message) ? err.message : String(err)) + '</div>';
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
 
 // ---- Helpers shared by every panel instance ----
 async function fetchAllRows(table, selectCols, applyFilters) {
@@ -330,7 +449,9 @@ async function loadSharedData() {
 // ---- Panel factory ----
 // Each .jobsPanel element on the page runs an independent copy of this: its
 // own state, filters, and paging, all scoped to that element via $(). Lets
-// the same "block" be dropped onto the page more than once.
+// the same "block" be dropped onto the page more than once. Returns a small
+// handle ({ panelEl, getFilters }) so page-level code (the Save button) can
+// read this panel's live filters without reaching into its closure.
 function initJobsPanel(panelEl) {
   const $ = (sel) => panelEl.querySelector(sel);
   const hideDepartment = panelEl.hasAttribute("data-hide-department");
@@ -342,24 +463,36 @@ function initJobsPanel(panelEl) {
     rows: [],
     snapshotDate: null,
     descCache: {},
-    filters: { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] },
+    filters: defaultFilters(),
     page: 1,
     pageSize: 10,
     expanded: null,
     fullyLoaded: false
   };
 
-  // Panels can opt into a default filter state via data-preset on the
-  // .jobsPanel element, applied once before the first render. "target"
-  // applies the Discipline/Role/Level preset; "target-today" also adds
-  // the Today days-old bucket on top of it.
+  // Panels opt into the page's resolved criteria via data-preset on the
+  // .jobsPanel element, applied once before the first render. "target" and
+  // "target-today" both seed the full saved-criteria shape; "target-today"
+  // additionally forces the Today days-old bucket on top (a display choice
+  // for that panel, not part of anyone's saved criteria).
   if (panelEl.dataset.preset === "target" || panelEl.dataset.preset === "target-today") {
-    state.filters.discipline = PRESET_FILTERS.discipline.slice();
-    state.filters.role = PRESET_FILTERS.role.slice();
-    state.filters.level = PRESET_FILTERS.level.slice();
+    state.filters.company = loadedFilters.company;
+    state.filters.wa = loadedFilters.wa;
+    state.filters.remote = loadedFilters.remote;
+    state.filters.search = loadedFilters.search;
+    state.filters.discipline = loadedFilters.discipline.slice();
+    state.filters.role = loadedFilters.role.slice();
+    state.filters.level = loadedFilters.level.slice();
   }
   if (panelEl.dataset.preset === "target-today") {
     state.filters.daysOld = ["today"];
+  }
+
+  // Only the interactive "all matching" panel (data-preset="target", visible
+  // controls) drives the local-device auto-save; the "today" panel's
+  // controls are hidden and never fire these handlers anyway.
+  function notifyFiltersChanged() {
+    if (panelEl.dataset.preset === "target") maybePersistLocal(state.filters);
   }
 
   // ---- Helpers ----
@@ -401,11 +534,19 @@ function initJobsPanel(panelEl) {
     const companies = Array.from(companyNames.entries()).sort((a, b) => a[1].localeCompare(b[1]));
     sel.innerHTML = '<option value="">All companies</option>' +
       companies.map(([slug, name]) => '<option value="' + JobDetail.esc(slug) + '">' + JobDetail.esc(name) + '</option>').join("");
+    sel.value = state.filters.company;
+
+    // Plain controls don't self-sync like the checkbox dropdowns below do,
+    // so reflect loaded/current state.filters into them on every render.
+    $(".search").value = state.filters.search;
+    $(".waChk").checked = state.filters.wa;
+    $(".remChk").checked = state.filters.remote;
 
     // classifier multi-selects (OR within a dropdown, AND across dropdowns; "(unclassified)" matches nulls)
-    buildMultiSelect('[data-key="discipline"]', "discipline", "discipline", "All disciplines");
-    buildMultiSelect('[data-key="role"]', "role_keyword", "role", "All roles");
-    buildMultiSelect('[data-key="level"]', "level", "level", "All levels");
+    // Only discipline/role/level are saved criteria, so only they report changes back for persistence.
+    buildMultiSelect('[data-key="discipline"]', "discipline", "discipline", "All disciplines", notifyFiltersChanged);
+    buildMultiSelect('[data-key="role"]', "role_keyword", "role", "All roles", notifyFiltersChanged);
+    buildMultiSelect('[data-key="level"]', "level", "level", "All levels", notifyFiltersChanged);
     buildDaysOldSelect('[data-key="daysOld"]', "daysOld", "All ages");
     buildMultiSelect('[data-key="postStatus"]', "post_status", "postStatus", "All statuses");
 
@@ -418,8 +559,10 @@ function initJobsPanel(panelEl) {
   // Shared wiring for a checkbox-dropdown filter (button toggle, clear-all,
   // per-checkbox state.filters[filterKey] tracking, reset/sync for external
   // callers like the preset button). optionsHtml is the pre-built list of
-  // <label><input type=checkbox>...</label> options for the panel.
-  function buildCheckboxDropdown(containerSel, filterKey, allLabel, optionsHtml) {
+  // <label><input type=checkbox>...</label> options for the panel. onChange,
+  // if given, fires after every toggle/clear-all so callers can react (e.g.
+  // persist to localStorage) - only passed for filters that are saved criteria.
+  function buildCheckboxDropdown(containerSel, filterKey, allLabel, optionsHtml, onChange) {
     const container = $(containerSel);
     container.innerHTML =
       '<button type="button" class="msdd-btn"></button>' +
@@ -451,6 +594,7 @@ function initJobsPanel(panelEl) {
       state.page = 1;
       updateLabel();
       renderTable();
+      if (onChange) onChange();
     };
     panel.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.onchange = () => {
@@ -461,6 +605,7 @@ function initJobsPanel(panelEl) {
         state.page = 1;
         updateLabel();
         renderTable();
+        if (onChange) onChange();
       };
     });
     container._reset = () => {
@@ -479,13 +624,13 @@ function initJobsPanel(panelEl) {
 
   // dataField = row property, filterKey = state.filters key. Options are the
   // distinct non-null values actually present in state.rows.
-  function buildMultiSelect(containerSel, dataField, filterKey, allLabel) {
+  function buildMultiSelect(containerSel, dataField, filterKey, allLabel, onChange) {
     const values = Array.from(new Set(state.rows.map(r => r[dataField]).filter(v => v != null && v !== ""))).sort();
     const hasNull = state.rows.some(r => r[dataField] == null || r[dataField] === "");
     const optionsHtml =
       values.map(v => '<label class="msdd-opt"><input type="checkbox" value="' + JobDetail.esc(v) + '"> ' + JobDetail.esc(v) + '</label>').join("") +
       (hasNull ? '<label class="msdd-opt"><input type="checkbox" value="' + UNCLASSIFIED + '"> (unclassified)</label>' : "");
-    buildCheckboxDropdown(containerSel, filterKey, allLabel, optionsHtml);
+    buildCheckboxDropdown(containerSel, filterKey, allLabel, optionsHtml, onChange);
   }
 
   // Fixed bucket list from DAYS_OLD_OPTIONS (not derived from data), plus an
@@ -643,27 +788,29 @@ function initJobsPanel(panelEl) {
 
   function wireControls() {
     const search = $(".search");
-    search.oninput = () => { state.filters.search = search.value; state.page = 1; renderTable(); };
+    search.oninput = () => { state.filters.search = search.value; state.page = 1; renderTable(); notifyFiltersChanged(); };
     const sel = $(".companySel");
-    sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); };
+    sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); notifyFiltersChanged(); };
     $('[data-action="preset"]').onclick = () => {
-      state.filters.discipline = PRESET_FILTERS.discipline.slice();
-      state.filters.role = PRESET_FILTERS.role.slice();
-      state.filters.level = PRESET_FILTERS.level.slice();
+      state.filters.discipline = loadedFilters.discipline.slice();
+      state.filters.role = loadedFilters.role.slice();
+      state.filters.level = loadedFilters.level.slice();
       state.page = 1;
       ['[data-key="discipline"]', '[data-key="role"]', '[data-key="level"]'].forEach(s => { const c = $(s); if (c && c._sync) c._sync(); });
       renderTable();
+      notifyFiltersChanged();
     };
-    $(".waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
-    $(".remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
+    $(".waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); notifyFiltersChanged(); };
+    $(".remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); notifyFiltersChanged(); };
     $('[data-action="clear"]').onclick = () => {
-      state.filters = { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] };
+      state.filters = defaultFilters();
       state.page = 1;
       search.value = ""; sel.value = "";
       $(".waChk").checked = false;
       $(".remChk").checked = false;
       ['[data-key="discipline"]', '[data-key="role"]', '[data-key="level"]', '[data-key="daysOld"]', '[data-key="postStatus"]'].forEach(s => { const c = $(s); if (c && c._reset) c._reset(); });
       renderTable();
+      notifyFiltersChanged();
     };
     // close any open dropdown when clicking elsewhere
     document.addEventListener("click", () => {
@@ -672,10 +819,19 @@ function initJobsPanel(panelEl) {
   }
 
   onSharedData(onData);
+
+  return { panelEl, getFilters: () => state.filters };
 }
 
-document.querySelectorAll(".jobsPanel").forEach(initJobsPanel);
-loadSharedData();
+async function main() {
+  await resolveCriteria();
+  renderCriteriaBar();
+  const handles = Array.from(document.querySelectorAll(".jobsPanel")).map(initJobsPanel);
+  const targetPanel = handles.find(h => h.panelEl.dataset.preset === "target");
+  if (targetPanel) wireCriteriaSave(targetPanel.getFilters);
+  loadSharedData();
+}
+main();
 </script>
 </body>
 </html>
