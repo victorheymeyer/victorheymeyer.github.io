@@ -231,7 +231,7 @@ function renderCriteriaBar() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "clearbtn";
-    btn.textContent = "Log out";
+    btn.textContent = "Sign Out";
     btn.onclick = async () => {
       btn.disabled = true;
       await supabaseClient.auth.signOut();
@@ -242,7 +242,7 @@ function renderCriteriaBar() {
     const link = document.createElement("a");
     link.className = "clearbtn";
     link.href = "/private/";
-    link.textContent = "Log in";
+    link.textContent = "Sign In";
     bar.appendChild(link);
   }
 }
