@@ -214,16 +214,36 @@ function maybePersistLocal(filters) {
 
 function renderCriteriaBar() {
   const bar = document.getElementById("criteriaBar");
+  bar.style.display = "";
+  bar.innerHTML = "";
+
+  const msg = document.createElement("span");
   if (uiState === "signed-in") {
-    bar.style.display = "";
-    bar.textContent = "Your saved criteria";
+    msg.textContent = "Your saved criteria";
   } else if (uiState === "local") {
-    bar.style.display = "";
-    bar.innerHTML = "Saved on this device — " +
-      '<a href="/private/">sign in</a> to keep your criteria across devices.';
+    msg.textContent = "Saved on this device — sign in to keep your criteria across devices.";
   } else {
-    bar.style.display = "";
-    bar.innerHTML = '<a href="/private/">Sign in</a> to save your search criteria.';
+    msg.textContent = "Sign in to save your search criteria.";
+  }
+  bar.appendChild(msg);
+
+  if (uiState === "signed-in") {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "clearbtn";
+    btn.textContent = "Log out";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      await supabaseClient.auth.signOut();
+      location.reload();
+    };
+    bar.appendChild(btn);
+  } else {
+    const link = document.createElement("a");
+    link.className = "clearbtn";
+    link.href = "/private/";
+    link.textContent = "Log in";
+    bar.appendChild(link);
   }
 }
 

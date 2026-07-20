@@ -223,8 +223,8 @@ td a:hover { text-decoration: underline; }
 .lightbox-nav[hidden] { display: none; }
 
 /* ---- Saved-criteria source indicator (see /projects/watchlist-jobs/my-jobs.html) ---- */
-.criteria-bar { color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--sp-14); }
-.criteria-bar a { color: var(--accent); }
+.criteria-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-12); color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--sp-14); }
+.criteria-bar a.clearbtn { text-decoration: none; }
 
 /* ---- Auth (login gate, see /private/) ---- */
 .authbox { max-width: 360px; }
