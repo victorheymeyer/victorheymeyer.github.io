@@ -129,7 +129,10 @@ const DAYS_OLD_OPTIONS = [
 //
 // daysOld/postStatus are deliberately NOT part of saved criteria - they
 // describe how someone is browsing right now (freshness/status), not what
-// job they want, and the daily digest (new-jobs-only) has no use for them.
+// job they want. The "today's new listings" digest does hard-code postStatus
+// to ["New", "New*"] (server-computed off the latest snapshot, not the
+// viewer's clock), but that's a fixed panel-level override, not something
+// pulled from - or written back into - the user's saved criteria blob.
 // Keeping them out of the blob means the digest and the site can never
 // drift out of sync over what "your criteria" means.
 const LOCAL_STORAGE_KEY = "watchlist_filters";
@@ -505,7 +508,7 @@ function initJobsPanel(panelEl) {
     state.filters.level = loadedFilters.level.slice();
   }
   if (panelEl.dataset.preset === "target-today") {
-    state.filters.daysOld = ["today"];
+    state.filters.postStatus = ["New", "New*"];
   }
 
   // Only the interactive "all matching" panel (data-preset="target", visible
