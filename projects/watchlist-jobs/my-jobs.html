@@ -13,13 +13,46 @@
 <div class="wrap">
   <div id="criteriaBar" class="criteria-bar" style="display:none"></div>
 
-  <div class="jobsPanel" data-preset="target-today" data-hide-department="true" data-show-all="true" data-hide-days-old="true">
+  <div class="jobsPanel" data-preset="target-today" data-status="New" data-hide-department="true" data-show-all="true" data-hide-days-old="true">
     <div class="sub">Loading the latest snapshot...</div>
 
     <div class="errBox"></div>
 
     <div class="panel" style="display:none">
-      <h2>Today's New Job Listings (all filters applied)</h2>
+      <h2>Today's New Job Listings — New (all filters applied)</h2>
+      <div class="controls" style="display:none">
+        <input type="text" class="search" placeholder="Search title, company, location, or department">
+        <select class="companySel"><option value="">All companies</option></select>
+        <div class="msdd" data-key="discipline"></div>
+        <div class="msdd" data-key="role"></div>
+        <div class="msdd" data-key="level"></div>
+        <div class="msdd" data-key="daysOld"></div>
+        <div class="msdd" data-key="postStatus"></div>
+        <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level values from your saved criteria">Apply Saved Criteria</button>
+        <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
+        <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
+        <button class="clearbtn" data-action="clear">Clear</button>
+      </div>
+      <div class="hint count"></div>
+      <table>
+        <thead>
+          <tr><th style="width:140px">Company</th><th>Title</th><th style="width:70px">Link</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="pager"></div>
+    </div>
+
+    <div class="loading">Connecting to Supabase...</div>
+  </div>
+
+  <div class="jobsPanel" data-preset="target-today" data-status="New*" data-hide-department="true" data-show-all="true" data-hide-days-old="true">
+    <div class="sub">Loading the latest snapshot...</div>
+
+    <div class="errBox"></div>
+
+    <div class="panel" style="display:none">
+      <h2>Today's New Job Listings — New* (all filters applied)</h2>
       <div class="controls" style="display:none">
         <input type="text" class="search" placeholder="Search title, company, location, or department">
         <select class="companySel"><option value="">All companies</option></select>
@@ -129,10 +162,11 @@ const DAYS_OLD_OPTIONS = [
 //
 // daysOld/postStatus are deliberately NOT part of saved criteria - they
 // describe how someone is browsing right now (freshness/status), not what
-// job they want. The "today's new listings" digest does hard-code postStatus
-// to ["New", "New*"] (server-computed off the latest snapshot, not the
-// viewer's clock), but that's a fixed panel-level override, not something
-// pulled from - or written back into - the user's saved criteria blob.
+// job they want. The two "today's new listings" digest panels each hard-code
+// postStatus to a single value (data-status="New" / "New*" on the .jobsPanel
+// element - server-computed off the latest snapshot, not the viewer's
+// clock), but that's a fixed panel-level override, not something pulled
+// from - or written back into - the user's saved criteria blob.
 // Keeping them out of the blob means the digest and the site can never
 // drift out of sync over what "your criteria" means.
 const LOCAL_STORAGE_KEY = "watchlist_filters";
@@ -508,7 +542,7 @@ function initJobsPanel(panelEl) {
     state.filters.level = loadedFilters.level.slice();
   }
   if (panelEl.dataset.preset === "target-today") {
-    state.filters.postStatus = ["New", "New*"];
+    state.filters.postStatus = [panelEl.dataset.status];
   }
 
   // Only the interactive "all matching" panel (data-preset="target", visible
