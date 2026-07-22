@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watchlist Jobs - Waitlist</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>Join the waitlist</h1>
+  <div class="sub">Be first to know when new Seattle roles are added to the tracker.</div>
+
+  <div class="panel authbox" id="joinBox">
+    <h2>Sign up</h2>
+    <p class="hint">Just your email. No spam, one note when this launches.</p>
+    <div id="joinErr"></div>
+    <form id="joinForm">
+      <div class="field">
+        <label for="emailInput">Email</label>
+        <input type="email" id="emailInput" required autocomplete="email" placeholder="you@example.com">
+      </div>
+      <!-- Honeypot: real visitors never see or reach this field (off-screen,
+           out of tab order, hidden from assistive tech). A non-empty value
+           on submit means it was filled by a script, not a person. -->
+      <div class="field hp-field" aria-hidden="true">
+        <label for="companyUrl">Company URL</label>
+        <input type="text" id="companyUrl" tabindex="-1" autocomplete="off">
+      </div>
+      <div class="field">
+        <div class="cf-turnstile" data-sitekey="0x4AAAAAAD7jUWLfTuUG_Z09" data-callback="onTurnstileToken" data-expired-callback="onTurnstileExpired"></div>
+      </div>
+      <button type="submit" class="clearbtn" id="joinSubmitBtn" disabled>Join waitlist</button>
+    </form>
+  </div>
+
+  <div class="panel authbox" id="successBox" style="display:none">
+    <h2>You're on the list.</h2>
+    <p class="hint">One optional question — helps us understand who's interested.</p>
+    <div id="categoryErr"></div>
+    <div class="field">
+      <label class="waitlist-optional-label" for="categorySel">What best describes your work? (optional)</label>
+      <select id="categorySel">
+        <option value="">Select one...</option>
+        <option>Software Engineering</option>
+        <option>Data &amp; Analytics</option>
+        <option>Product Management</option>
+        <option>Design</option>
+        <option>Program / Project Management</option>
+        <option>Finance</option>
+        <option>Marketing</option>
+        <option>Sales / Business Development</option>
+        <option>Recruiting / People</option>
+        <option>Operations</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <button type="button" class="clearbtn" id="doneBtn">Done</button>
+    <button type="button" class="waitlist-skip" id="skipBtn">Skip</button>
+  </div>
+
+  <footer class="site-footer">
+    <p>© 2026 Victor Heymeyer | Seattle, WA |<a href="https://www.linkedin.com/in/heymeyer/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> </p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+<script>
+// ---- Config ----
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+const EDGE_FUNCTION_URL = SUPABASE_URL + "/functions/v1/waitlist-join";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+const state = { email: "", turnstileToken: "" };
+
+// ---- Turnstile callbacks (wired via data-callback / data-expired-callback) ----
+window.onTurnstileToken = function (token) {
+  state.turnstileToken = token;
+  document.getElementById("joinSubmitBtn").disabled = false;
+};
+window.onTurnstileExpired = function () {
+  state.turnstileToken = "";
+  document.getElementById("joinSubmitBtn").disabled = true;
+};
+
+// ---- Step 1: join ----
+function showJoinError(msg) {
+  const box = document.getElementById("joinErr");
+  box.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = "err";
+  div.textContent = msg;
+  box.appendChild(div);
+}
+function clearJoinError() {
+  document.getElementById("joinErr").innerHTML = "";
+}
+
+document.getElementById("joinForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  clearJoinError();
+
+  const emailInput = document.getElementById("emailInput");
+  const email = emailInput.value.trim();
+  const honeypot = document.getElementById("companyUrl").value;
+  const submitBtn = document.getElementById("joinSubmitBtn");
+
+  if (!EMAIL_RE.test(email)) {
+    showJoinError("Please enter a valid email address.");
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Joining...";
+
+  try {
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "apikey": ANON_KEY, "Authorization": "Bearer " + ANON_KEY },
+      body: JSON.stringify({ email: email, turnstileToken: state.turnstileToken, company_url: honeypot })
+    });
+    const result = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      showJoinError(result.error || "Something went wrong, please try again.");
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Join waitlist";
+      if (window.turnstile) window.turnstile.reset();
+      state.turnstileToken = "";
+      return;
+    }
+
+    state.email = email;
+    document.getElementById("joinBox").style.display = "none";
+    document.getElementById("successBox").style.display = "block";
+  } catch (err) {
+    showJoinError("Network error, please try again.");
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Join waitlist";
+  }
+});
+
+// ---- Step 2: optional category ----
+function showCategoryError(msg) {
+  const box = document.getElementById("categoryErr");
+  box.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = "err";
+  div.textContent = msg;
+  box.appendChild(div);
+}
+function clearCategoryError() {
+  document.getElementById("categoryErr").innerHTML = "";
+}
+
+function showThanks() {
+  const box = document.getElementById("successBox");
+  box.innerHTML = "";
+  const h2 = document.createElement("h2");
+  h2.textContent = "Thanks - you're all set.";
+  const p = document.createElement("p");
+  p.className = "hint";
+  p.textContent = "We'll email you when new Seattle roles go live.";
+  box.appendChild(h2);
+  box.appendChild(p);
+}
+
+document.getElementById("doneBtn").addEventListener("click", async () => {
+  clearCategoryError();
+  const value = document.getElementById("categorySel").value;
+  if (!value) { showThanks(); return; }
+
+  const doneBtn = document.getElementById("doneBtn");
+  doneBtn.disabled = true;
+  try {
+    const { error } = await supabaseClient.rpc("waitlist_set_category", { p_email: state.email, p_category: value });
+    if (error) throw error;
+    showThanks();
+  } catch (err) {
+    showCategoryError("Could not save that, please try again.");
+    doneBtn.disabled = false;
+  }
+});
+
+document.getElementById("skipBtn").addEventListener("click", () => showThanks());
+</script>
+</body>
+</html>

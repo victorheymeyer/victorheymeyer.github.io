@@ -6,6 +6,7 @@
   const BRAND = { label: "Jobs Home", href: "/projects/watchlist-jobs/" };
   const SITE_NAV = [
     { label: "Seattle", href: "/projects/watchlist-jobs/seattle.html" },
+    { label: "Waitlist", href: "/projects/watchlist-jobs/waitlist/" },
     { label: "My Jobs", href: "/projects/watchlist-jobs/my-jobs.html" },
     { label: "My Criteria", href: "/projects/watchlist-jobs/my-criteria.html" },
     { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },

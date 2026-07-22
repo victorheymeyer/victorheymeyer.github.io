@@ -260,6 +260,18 @@ td a:hover { text-decoration: underline; }
 .authbox .field input { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-8) var(--sp-10); font-size: var(--fs-sm); }
 .authbox .meta { font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
 .authbox .meta strong { color: var(--text); }
+.authbox .field select { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-8) var(--sp-10); font-size: var(--fs-sm); }
+
+/* ---- Waitlist signup ---- */
+/* Honeypot: present in the DOM and reachable by screen readers getting no
+   visual/tab-order signal would defeat the point, so it's hidden purely
+   visually (off-screen) while staying out of the tab order and announced
+   as hidden to assistive tech. Humans never see or focus it; bots filling
+   every field in DOM order still hit it. */
+.hp-field { position: absolute; left: -5000px; width: 1px; height: 1px; overflow: hidden; }
+.waitlist-optional-label { color: var(--muted); font-weight: 400; }
+.waitlist-skip { background: none; border: none; color: var(--muted); font-size: var(--fs-sm); cursor: pointer; padding: var(--sp-8) 0; text-decoration: underline; }
+.waitlist-skip:hover { color: var(--text); }
 
 /* ---- Table stats pages (per-table monitoring: depth/breadth/storage) ---- */
 .chartpair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-16); margin-bottom: var(--sp-10); }
