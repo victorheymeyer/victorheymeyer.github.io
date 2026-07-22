@@ -11,6 +11,7 @@
 <body>
 <div id="siteNav"></div>
 <div class="wrap">
+  <div id="seedBanner" style="display:none"></div>
   <div id="criteriaBar" class="criteria-bar" style="display:none"></div>
 
   <div class="jobsPanel" data-preset="target-today" data-status="New" data-hide-department="true" data-show-all="true" data-hide-days-old="true">
@@ -209,23 +210,62 @@ let uiState = "none";
 let currentSession = null;
 let currentCriteriaId = null;
 let loadedFilters = defaultFilters();
+// Set only when this load just migrated a local blob into a brand-new
+// account row (first sign-in with device history). Read once by main() to
+// decide whether to show the one-time seed banner, then never touched again
+// - it is not persisted anywhere, so a reload never re-shows it.
+let justSeededFromLocal = false;
 
 async function resolveCriteria() {
   const { data: { session } } = await supabaseClient.auth.getSession();
   currentSession = session;
   if (session) {
     uiState = "signed-in";
+    let hasRow = false;
     try {
       const { data, error } = await supabaseClient.from("user_criteria").select("id, filters").limit(1);
       if (error) throw error;
       if (data && data.length) {
         currentCriteriaId = data[0].id;
         loadedFilters = mergeFilters(data[0].filters);
+        hasRow = true;
       }
     } catch (err) {
       console.error(err);
+      return; // read failed: behave as "no row" (empty), never fall back to local.
     }
-    return; // signed in: never fall back to localStorage, even on error.
+    if (hasRow) return; // session + DB row exists -> load from DB.
+
+    // Session, no DB row yet: migrate a local-device blob in once, rather
+    // than silently discarding a guest's work the moment they sign in.
+    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!raw) return; // session, no row, no local blob -> empty (unchanged).
+
+    let localBlob;
+    try {
+      localBlob = mergeFilters(JSON.parse(raw));
+    } catch (err) {
+      return; // corrupt local blob - nothing to migrate.
+    }
+
+    try {
+      const { data, error } = await supabaseClient.from("user_criteria")
+        .insert({ user_id: session.user.id, filters: persistedBlob(localBlob), updated_at: new Date().toISOString() })
+        .select("id").single();
+      if (error) throw error;
+      // Write succeeded - only now clear the local copy. Never the reverse
+      // order, or a failed write would silently lose the guest's criteria.
+      currentCriteriaId = data.id;
+      loadedFilters = localBlob;
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
+      justSeededFromLocal = true;
+    } catch (err) {
+      console.error(err);
+      // Write failed: keep the local blob untouched so the next load can
+      // retry. No banner, board renders empty for this load, uiState stays
+      // "signed-in" as it already was.
+    }
+    return; // signed in: never fall back to localStorage for rendering.
   }
 
   const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -247,6 +287,28 @@ function maybePersistLocal(filters) {
     return; // storage unavailable/full - filters still work for this session.
   }
   if (uiState !== "local") { uiState = "local"; renderCriteriaBar(); }
+}
+
+// Shown once, only when resolveCriteria() just migrated a local blob into a
+// new account row. Dismissable; never reappears on a normal signed-in load
+// since justSeededFromLocal isn't persisted anywhere.
+function renderSeedBanner() {
+  const el = document.getElementById("seedBanner");
+  el.className = "seed-banner";
+  el.style.display = "";
+  el.innerHTML = "";
+
+  const msg = document.createElement("span");
+  msg.textContent = "The criteria stored on your device has been added to your account and removed from this device. You can edit or clear it anytime while signed in.";
+  el.appendChild(msg);
+
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "seed-banner-dismiss";
+  dismiss.setAttribute("aria-label", "Dismiss");
+  dismiss.textContent = "×";
+  dismiss.onclick = () => { el.style.display = "none"; el.innerHTML = ""; };
+  el.appendChild(dismiss);
 }
 
 function renderCriteriaBar() {
@@ -887,6 +949,7 @@ function initJobsPanel(panelEl) {
 async function main() {
   await resolveCriteria();
   renderCriteriaBar();
+  if (justSeededFromLocal) renderSeedBanner();
   const handles = Array.from(document.querySelectorAll(".jobsPanel")).map(initJobsPanel);
   const targetPanel = handles.find(h => h.panelEl.dataset.preset === "target");
   if (targetPanel) wireCriteriaSave(targetPanel.getFilters);
