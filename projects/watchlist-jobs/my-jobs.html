@@ -215,6 +215,12 @@ let loadedFilters = defaultFilters();
 // decide whether to show the one-time seed banner, then never touched again
 // - it is not persisted anywhere, so a reload never re-shows it.
 let justSeededFromLocal = false;
+// True once loadedFilters carries at least one discipline/role/level value,
+// from either source (signed-in DB row or local-device blob). The
+// "target-today" digest panels only mean anything relative to a saved
+// search, so they show a prompt instead of an unfiltered board when this
+// is false, rather than dumping every new job regardless of fit.
+let hasSavedCriteria = false;
 
 async function resolveCriteria() {
   const { data: { session } } = await supabaseClient.auth.getSession();
@@ -675,6 +681,25 @@ function initJobsPanel(panelEl) {
 
     $(".panel").style.display = "block";
 
+    // Digest panels only mean anything relative to a saved search - with
+    // none set, "today's new jobs" is just "all jobs", which isn't the
+    // point of this panel. Show a prompt instead of an unfiltered table.
+    if (panelEl.dataset.preset === "target-today" && !hasSavedCriteria) {
+      $("table").style.display = "none";
+      $(".pager").innerHTML = "";
+      let msg = $(".no-criteria-msg");
+      if (!msg) {
+        msg = document.createElement("div");
+        msg.className = "no-criteria-msg criteria-box";
+        $("table").insertAdjacentElement("beforebegin", msg);
+      }
+      msg.textContent = "Please add criteria or sign in";
+      return;
+    }
+    const existingMsg = $(".no-criteria-msg");
+    if (existingMsg) existingMsg.remove();
+    $("table").style.display = "";
+
     renderTable();
     wireControls();
   }
@@ -948,6 +973,7 @@ function initJobsPanel(panelEl) {
 
 async function main() {
   await resolveCriteria();
+  hasSavedCriteria = loadedFilters.discipline.length > 0 || loadedFilters.role.length > 0 || loadedFilters.level.length > 0;
   renderCriteriaBar();
   if (justSeededFromLocal) renderSeedBanner();
   const handles = Array.from(document.querySelectorAll(".jobsPanel")).map(initJobsPanel);

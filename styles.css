@@ -226,6 +226,7 @@ td a:hover { text-decoration: underline; }
 .criteria-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-12); color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--sp-14); }
 .criteria-bar a.clearbtn { text-decoration: none; }
 .criteria-box { display: inline-block; width: fit-content; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-8) var(--sp-12); }
+.no-criteria-msg { margin-bottom: var(--sp-14); }
 
 .seed-banner { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-12); background: var(--panel); border: 1px solid var(--good); border-radius: var(--radius-sm); padding: var(--sp-10) var(--sp-12); margin-bottom: var(--sp-14); color: var(--text); font-size: var(--fs-sm); }
 .seed-banner-dismiss { background: none; border: none; color: var(--muted); font-size: var(--fs-lg); line-height: 1; cursor: pointer; padding: 0 var(--sp-4); }
