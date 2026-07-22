@@ -225,9 +225,20 @@ td a:hover { text-decoration: underline; }
 /* ---- Saved-criteria source indicator (see /projects/watchlist-jobs/my-jobs.html) ---- */
 .criteria-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-12); color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--sp-14); }
 .criteria-bar a.clearbtn { text-decoration: none; }
+.criteria-box { display: inline-block; width: fit-content; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-8) var(--sp-12); }
 
 /* ---- Auth (login gate, see /private/) ---- */
-.authbox { max-width: 360px; }
+.auth-layout { display: flex; align-items: flex-start; gap: var(--sp-24); flex-wrap: wrap; }
+.auth-col { flex: 0 0 auto; }
+.roadmap-panel { flex: 0 1 320px; width: 320px; padding: var(--sp-16); margin-bottom: var(--sp-18); }
+.roadmap-panel h2 { font-size: var(--fs-base); margin: 0 0 var(--sp-4); }
+.roadmap-list { list-style: none; margin: 0 0 var(--sp-14); padding: 0; }
+.roadmap-list li { position: relative; padding-left: var(--sp-16); margin-bottom: var(--sp-9); font-size: var(--fs-sm); color: var(--text); }
+.roadmap-list li::before { content: "\2022"; position: absolute; left: 0; color: var(--accent); }
+.hint-inline { color: var(--muted); font-size: var(--fs-xs); }
+.roadmap-waitlist { margin: 0; }
+
+.authbox { max-width: 320px; width: 320px; }
 .authbox .field { margin-bottom: var(--sp-14); }
 .authbox .field label { display: block; color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-6); }
 .authbox .field input { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-8) var(--sp-10); font-size: var(--fs-sm); }

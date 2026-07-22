@@ -254,6 +254,9 @@ function renderCriteriaBar() {
   bar.style.display = "";
   bar.innerHTML = "";
 
+  const box = document.createElement("div");
+  box.className = "criteria-box";
+
   const msg = document.createElement("span");
   if (uiState === "signed-in") {
     msg.textContent = "Your saved criteria";
@@ -262,7 +265,8 @@ function renderCriteriaBar() {
   } else {
     msg.textContent = "Sign in to save your search criteria.";
   }
-  bar.appendChild(msg);
+  box.appendChild(msg);
+  bar.appendChild(box);
 
   if (uiState === "signed-in") {
     const btn = document.createElement("button");
