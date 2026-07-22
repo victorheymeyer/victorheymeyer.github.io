@@ -745,7 +745,7 @@ function initJobsPanel(panelEl) {
     tbody.innerHTML = "";
     slice.forEach(r => {
       const key = r.watchlist_company + "::" + r.ats_id;
-      const link = r.apply_url || r.url;
+      const link = r.url || r.apply_url;
       const badges =
         (r.maybe_wa ? '<span class="badge wa">WA</span>' : "") +
         (r.maybe_remote_wa ? '<span class="badge rem">Remote</span>' : "");
