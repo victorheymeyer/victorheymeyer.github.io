@@ -7,6 +7,7 @@
   const SITE_NAV = [
     { label: "Seattle", href: "/projects/watchlist-jobs/seattle.html" },
     { label: "My Jobs", href: "/projects/watchlist-jobs/my-jobs.html" },
+    { label: "My Criteria", href: "/projects/watchlist-jobs/my-criteria.html" },
     { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },
     { label: "Stats", href: "/projects/watchlist-jobs/stats/index.html" },
     { label: "Tables", href: "/projects/watchlist-jobs/tables/index.html" }

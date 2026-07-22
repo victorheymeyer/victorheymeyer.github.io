@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watchlist Jobs - My Criteria</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>My Criteria</h1>
+  <p class="sub">Discipline, role, level, and WA/Remote-WA - the same criteria the My Jobs dashboard filters and digests use.</p>
+
+  <div id="seedBanner" style="display:none"></div>
+
+  <div class="panel">
+    <div class="errBox"></div>
+
+    <div class="criteria-form" style="display:none">
+      <div class="criteria-row">
+        <label class="chk"><input type="checkbox" id="waChk"> WA Jobs</label>
+        <label class="chk"><input type="checkbox" id="remChk"> Remote-WA Jobs</label>
+      </div>
+
+      <div class="criteria-group">
+        <div class="criteria-group-label">Discipline</div>
+        <div class="criteria-opt-list" id="disciplineList"></div>
+      </div>
+      <div class="criteria-group">
+        <div class="criteria-group-label">Role</div>
+        <div class="criteria-opt-list" id="roleList"></div>
+      </div>
+      <div class="criteria-group">
+        <div class="criteria-group-label">Level</div>
+        <div class="criteria-opt-list" id="levelList"></div>
+      </div>
+
+      <div class="criteria-actions">
+        <button type="button" class="clearbtn" id="clearBtn">Clear</button>
+        <button type="button" class="clearbtn" id="saveBtn">Save Criteria</button>
+        <span class="hint" id="saveMsg"></span>
+      </div>
+    </div>
+
+    <div class="loading" id="loadingMsg">Loading criteria...</div>
+  </div>
+
+  <footer class="site-footer">
+    <p>© 2026 Victor Heymeyer | Seattle, WA |<a href="https://www.linkedin.com/in/heymeyer/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> </p>
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/projects/watchlist-jobs/criteria.js"></script>
+<script>
+const supabaseClient = Criteria.supabaseClient;
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// Same paged-fetch strategy as my-jobs.html's fetchAllRows: the first
+// request tells us the real per-request cap and total count, then any
+// remaining pages fire in parallel. Only three narrow columns here (not the
+// dashboard's full row shape) since all this page needs is the distinct
+// discipline/role/level values actually present in the latest snapshot.
+async function fetchAllRows(table, selectCols, applyFilters) {
+  const requestedPageSize = 10000;
+  function buildQuery(withCount) {
+    let q = supabaseClient.from(table).select(selectCols, withCount ? { count: "exact" } : undefined);
+    if (applyFilters) q = applyFilters(q);
+    return q;
+  }
+  const first = await buildQuery(true).range(0, requestedPageSize - 1);
+  if (first.error) throw first.error;
+  let all = first.data || [];
+  const total = first.count != null ? first.count : all.length;
+  const actualPageSize = all.length > 0 ? all.length : requestedPageSize;
+  if (all.length < total) {
+    const requests = [];
+    for (let from = all.length; from < total; from += actualPageSize) {
+      requests.push(buildQuery(false).range(from, from + actualPageSize - 1));
+    }
+    const results = await Promise.all(requests);
+    for (const r of results) {
+      if (r.error) throw r.error;
+      all = all.concat(r.data || []);
+    }
+  }
+  return all;
+}
+
+function distinctValues(rows, field) {
+  const values = Array.from(new Set(rows.map(r => r[field]).filter(v => v != null && v !== ""))).sort();
+  const hasNull = rows.some(r => r[field] == null || r[field] === "");
+  return { values, hasNull };
+}
+
+// In-memory form state only - mutated by the controls below, written to a
+// store solely by Save Criteria's click handler.
+let formState = Criteria.defaultFilters();
+
+function renderChecklist(containerId, key, values, hasNull) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = values.map(v =>
+    '<label class="criteria-opt"><input type="checkbox" value="' + esc(v) + '"> ' + esc(v) + '</label>'
+  ).join("") + (hasNull ? '<label class="criteria-opt"><input type="checkbox" value="' + Criteria.UNCLASSIFIED + '"> (unclassified)</label>' : "");
+
+  el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.checked = formState[key].includes(cb.value);
+    cb.onchange = () => {
+      const arr = formState[key];
+      const i = arr.indexOf(cb.value);
+      if (cb.checked && i < 0) arr.push(cb.value);
+      if (!cb.checked && i >= 0) arr.splice(i, 1);
+    };
+  });
+}
+
+function renderForm(classifiers) {
+  renderChecklist("disciplineList", "discipline", classifiers.discipline.values, classifiers.discipline.hasNull);
+  renderChecklist("roleList", "role", classifiers.role.values, classifiers.role.hasNull);
+  renderChecklist("levelList", "level", classifiers.level.values, classifiers.level.hasNull);
+
+  const waChk = document.getElementById("waChk");
+  const remChk = document.getElementById("remChk");
+  waChk.checked = formState.wa;
+  remChk.checked = formState.remote;
+  waChk.onchange = () => { formState.wa = waChk.checked; };
+  remChk.onchange = () => { formState.remote = remChk.checked; };
+}
+
+async function main() {
+  const loadingMsg = document.getElementById("loadingMsg");
+  const errBox = document.querySelector(".errBox");
+  const formEl = document.querySelector(".criteria-form");
+
+  try {
+    const [, latest] = await Promise.all([
+      Criteria.resolveCriteria(),
+      supabaseClient.from("raw_watchlist_jobs").select("snapshot_date").order("snapshot_date", { ascending: false }).limit(1)
+    ]);
+    if (latest.error) throw latest.error;
+    if (!latest.data || !latest.data.length) throw new Error("No snapshot data found.");
+    const snapshotDate = latest.data[0].snapshot_date;
+
+    const rows = await fetchAllRows("jobs_location_flags", "discipline, role_keyword, level", (q) => q.eq("snapshot_date", snapshotDate));
+    const classifiers = {
+      discipline: distinctValues(rows, "discipline"),
+      role: distinctValues(rows, "role_keyword"),
+      level: distinctValues(rows, "level")
+    };
+
+    const loaded = Criteria.state.loadedFilters;
+    formState.discipline = loaded.discipline.slice();
+    formState.role = loaded.role.slice();
+    formState.level = loaded.level.slice();
+    formState.wa = loaded.wa;
+    formState.remote = loaded.remote;
+
+    renderForm(classifiers);
+
+    document.getElementById("clearBtn").onclick = () => {
+      formState = Criteria.defaultFilters();
+      renderForm(classifiers);
+    };
+
+    const saveBtn = document.getElementById("saveBtn");
+    const saveMsg = document.getElementById("saveMsg");
+    saveBtn.onclick = async () => {
+      saveMsg.textContent = "";
+      saveBtn.disabled = true;
+      try {
+        // Merge onto the last-loaded filters rather than a bare 5-field
+        // object, so company/search (set elsewhere, on the My Jobs
+        // dashboard) survive a save made from this page.
+        const merged = Object.assign({}, Criteria.state.loadedFilters, {
+          discipline: formState.discipline.slice(),
+          role: formState.role.slice(),
+          level: formState.level.slice(),
+          wa: formState.wa,
+          remote: formState.remote
+        });
+        await Criteria.saveCriteria(merged);
+        saveMsg.textContent = "Saved.";
+      } catch (err) {
+        saveMsg.innerHTML = '<div class="err">Could not save: ' + esc((err && err.message) ? err.message : String(err)) + '</div>';
+      } finally {
+        saveBtn.disabled = false;
+      }
+    };
+
+    if (Criteria.state.justSeededFromLocal) {
+      Criteria.renderSeedBanner(document.getElementById("seedBanner"));
+    }
+
+    loadingMsg.style.display = "none";
+    formEl.style.display = "";
+  } catch (err) {
+    loadingMsg.style.display = "none";
+    errBox.innerHTML = '<div class="err"><strong>Could not load criteria.</strong><br>' + esc((err && err.message) ? err.message : String(err)) + '</div>';
+  }
+}
+
+main();
+</script>
+</body>
+</html>

@@ -121,12 +121,15 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script src="/projects/watchlist-jobs/criteria.js"></script>
 <script>
 // ---- Config ----
-const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
-const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
-
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+// Supabase client + saved-criteria storage (resolve/save/local-persist) live
+// in /projects/watchlist-jobs/criteria.js, shared with my-criteria.html - see
+// that file for the uiState/loadedFilters/justSeededFromLocal model.
+const supabaseClient = Criteria.supabaseClient;
+const UNCLASSIFIED = Criteria.UNCLASSIFIED;
+const defaultFilters = Criteria.defaultFilters;
 
 const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
@@ -135,11 +138,6 @@ const LIST_COLUMNS = [
   "discipline","role_keyword","level","description_last_change","description_change_count",
   "post_status"
 ].join(",");
-
-// Sentinel value for the "(unclassified)" option in the classifier dropdowns
-// (matches rows where discipline/role_keyword/level is null). Declared here,
-// ahead of its other use in buildMultiSelect()/classifierMatch() below.
-const UNCLASSIFIED = "__unclassified__";
 
 // Days Old filter buckets. Ranges overlap by design (e.g. "Today" is a
 // subset of "Last 3 days", which is a subset of "Last 7 days") - a row
@@ -154,168 +152,12 @@ const DAYS_OLD_OPTIONS = [
   { value: "61+", label: "61+ days", test: n => n >= 61 }
 ];
 
-// ---- Saved criteria (accounts + local-device fallback) ----
-// Three sources, in priority order: a signed-in user's row in
-// public.user_criteria; failing that, a localStorage blob from a previous
-// logged-out visit; failing that, empty (unfiltered board). Resolved once,
-// before either .jobsPanel initializes, so there is no flash of empty
-// filters followed by a re-render once criteria arrive.
-//
-// daysOld/postStatus are deliberately NOT part of saved criteria - they
-// describe how someone is browsing right now (freshness/status), not what
-// job they want. The two "today's new listings" digest panels each hard-code
-// postStatus to a single value (data-status="New" / "New*" on the .jobsPanel
-// element - server-computed off the latest snapshot, not the viewer's
-// clock), but that's a fixed panel-level override, not something pulled
-// from - or written back into - the user's saved criteria blob.
-// Keeping them out of the blob means the digest and the site can never
-// drift out of sync over what "your criteria" means.
-const LOCAL_STORAGE_KEY = "watchlist_filters";
-
-function defaultFilters() {
-  return { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] };
-}
-
-// Merge a saved blob over the default shape so a blob missing a key (or an
-// unknown/missing "v") never produces undefined in state.filters. Only the
-// seven persisted keys are read from `saved`; daysOld/postStatus always come
-// from the default.
-function mergeFilters(saved) {
-  const merged = defaultFilters();
-  if (saved && typeof saved === "object") {
-    if (typeof saved.company === "string") merged.company = saved.company;
-    if (typeof saved.wa === "boolean") merged.wa = saved.wa;
-    if (typeof saved.remote === "boolean") merged.remote = saved.remote;
-    if (typeof saved.search === "string") merged.search = saved.search;
-    if (Array.isArray(saved.discipline)) merged.discipline = saved.discipline.slice();
-    if (Array.isArray(saved.role)) merged.role = saved.role.slice();
-    if (Array.isArray(saved.level)) merged.level = saved.level.slice();
-  }
-  return merged;
-}
-
-function persistedBlob(filters) {
-  return {
-    v: 1,
-    company: filters.company, wa: filters.wa, remote: filters.remote, search: filters.search,
-    discipline: filters.discipline, role: filters.role, level: filters.level
-  };
-}
-
-// "signed-in" | "local" | "none" - drives the page-level source indicator
-// and whether the Save button shows. Signed-in shows even with no saved
-// row yet (an empty row is still "yours"); "local" only when logged out
-// AND a device blob was found; "none" otherwise (no nagging).
-let uiState = "none";
-let currentSession = null;
-let currentCriteriaId = null;
-let loadedFilters = defaultFilters();
-// Set only when this load just migrated a local blob into a brand-new
-// account row (first sign-in with device history). Read once by main() to
-// decide whether to show the one-time seed banner, then never touched again
-// - it is not persisted anywhere, so a reload never re-shows it.
-let justSeededFromLocal = false;
 // True once loadedFilters carries at least one discipline/role/level value,
 // from either source (signed-in DB row or local-device blob). The
 // "target-today" digest panels only mean anything relative to a saved
 // search, so they show a prompt instead of an unfiltered board when this
 // is false, rather than dumping every new job regardless of fit.
 let hasSavedCriteria = false;
-
-async function resolveCriteria() {
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  currentSession = session;
-  if (session) {
-    uiState = "signed-in";
-    let hasRow = false;
-    try {
-      const { data, error } = await supabaseClient.from("user_criteria").select("id, filters").limit(1);
-      if (error) throw error;
-      if (data && data.length) {
-        currentCriteriaId = data[0].id;
-        loadedFilters = mergeFilters(data[0].filters);
-        hasRow = true;
-      }
-    } catch (err) {
-      console.error(err);
-      return; // read failed: behave as "no row" (empty), never fall back to local.
-    }
-    if (hasRow) return; // session + DB row exists -> load from DB.
-
-    // Session, no DB row yet: migrate a local-device blob in once, rather
-    // than silently discarding a guest's work the moment they sign in.
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return; // session, no row, no local blob -> empty (unchanged).
-
-    let localBlob;
-    try {
-      localBlob = mergeFilters(JSON.parse(raw));
-    } catch (err) {
-      return; // corrupt local blob - nothing to migrate.
-    }
-
-    try {
-      const { data, error } = await supabaseClient.from("user_criteria")
-        .insert({ user_id: session.user.id, filters: persistedBlob(localBlob), updated_at: new Date().toISOString() })
-        .select("id").single();
-      if (error) throw error;
-      // Write succeeded - only now clear the local copy. Never the reverse
-      // order, or a failed write would silently lose the guest's criteria.
-      currentCriteriaId = data.id;
-      loadedFilters = localBlob;
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
-      justSeededFromLocal = true;
-    } catch (err) {
-      console.error(err);
-      // Write failed: keep the local blob untouched so the next load can
-      // retry. No banner, board renders empty for this load, uiState stays
-      // "signed-in" as it already was.
-    }
-    return; // signed in: never fall back to localStorage for rendering.
-  }
-
-  const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-  if (raw) {
-    try {
-      loadedFilters = mergeFilters(JSON.parse(raw));
-      uiState = "local";
-    } catch (err) {
-      // corrupt/foreign blob under this key; ignore and fall through to empty.
-    }
-  }
-}
-
-function maybePersistLocal(filters) {
-  if (uiState === "signed-in") return; // signed-in users save explicitly, to the DB.
-  try {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(persistedBlob(filters)));
-  } catch (err) {
-    return; // storage unavailable/full - filters still work for this session.
-  }
-  if (uiState !== "local") { uiState = "local"; renderCriteriaBar(); }
-}
-
-// Shown once, only when resolveCriteria() just migrated a local blob into a
-// new account row. Dismissable; never reappears on a normal signed-in load
-// since justSeededFromLocal isn't persisted anywhere.
-function renderSeedBanner() {
-  const el = document.getElementById("seedBanner");
-  el.className = "seed-banner";
-  el.style.display = "";
-  el.innerHTML = "";
-
-  const msg = document.createElement("span");
-  msg.textContent = "The criteria stored on your device has been added to your account and removed from this device. You can edit or clear it anytime while signed in.";
-  el.appendChild(msg);
-
-  const dismiss = document.createElement("button");
-  dismiss.type = "button";
-  dismiss.className = "seed-banner-dismiss";
-  dismiss.setAttribute("aria-label", "Dismiss");
-  dismiss.textContent = "×";
-  dismiss.onclick = () => { el.style.display = "none"; el.innerHTML = ""; };
-  el.appendChild(dismiss);
-}
 
 function renderCriteriaBar() {
   const bar = document.getElementById("criteriaBar");
@@ -326,9 +168,9 @@ function renderCriteriaBar() {
   box.className = "criteria-box";
 
   const msg = document.createElement("span");
-  if (uiState === "signed-in") {
+  if (Criteria.state.uiState === "signed-in") {
     msg.textContent = "Your saved criteria";
-  } else if (uiState === "local") {
+  } else if (Criteria.state.uiState === "local") {
     msg.textContent = "Saved on this device — sign in to keep your criteria across devices.";
   } else {
     msg.textContent = "Sign in to save your search criteria.";
@@ -336,7 +178,7 @@ function renderCriteriaBar() {
   box.appendChild(msg);
   bar.appendChild(box);
 
-  if (uiState === "signed-in") {
+  if (Criteria.state.uiState === "signed-in") {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "clearbtn";
@@ -357,29 +199,18 @@ function renderCriteriaBar() {
 }
 
 // Wired to the "all matching" panel only (the one with visible, interactive
-// controls) - it owns the one saved criteria set for the page.
+// controls) - it owns the one saved criteria set for the page. The write
+// itself is Criteria.saveCriteria(), shared with my-criteria.html.
 function wireCriteriaSave(getFilters) {
   const btn = document.getElementById("saveCriteriaBtn");
   const msg = document.getElementById("saveCriteriaMsg");
-  if (uiState !== "signed-in") { btn.style.display = "none"; return; }
+  if (Criteria.state.uiState !== "signed-in") { btn.style.display = "none"; return; }
   btn.style.display = "";
   btn.onclick = async () => {
     msg.innerHTML = "";
     btn.disabled = true;
     try {
-      const payload = persistedBlob(getFilters());
-      if (currentCriteriaId) {
-        const { error } = await supabaseClient.from("user_criteria")
-          .update({ filters: payload, updated_at: new Date().toISOString() })
-          .eq("id", currentCriteriaId);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabaseClient.from("user_criteria")
-          .insert({ user_id: currentSession.user.id, filters: payload, updated_at: new Date().toISOString() })
-          .select("id").single();
-        if (error) throw error;
-        currentCriteriaId = data.id;
-      }
+      await Criteria.saveCriteria(getFilters());
       msg.textContent = "Saved.";
     } catch (err) {
       msg.innerHTML = '<div class="err">Could not save: ' + JobDetail.esc((err && err.message) ? err.message : String(err)) + '</div>';
@@ -605,13 +436,13 @@ function initJobsPanel(panelEl) {
   // additionally forces the Today days-old bucket on top (a display choice
   // for that panel, not part of anyone's saved criteria).
   if (panelEl.dataset.preset === "target" || panelEl.dataset.preset === "target-today") {
-    state.filters.company = loadedFilters.company;
-    state.filters.wa = loadedFilters.wa;
-    state.filters.remote = loadedFilters.remote;
-    state.filters.search = loadedFilters.search;
-    state.filters.discipline = loadedFilters.discipline.slice();
-    state.filters.role = loadedFilters.role.slice();
-    state.filters.level = loadedFilters.level.slice();
+    state.filters.company = Criteria.state.loadedFilters.company;
+    state.filters.wa = Criteria.state.loadedFilters.wa;
+    state.filters.remote = Criteria.state.loadedFilters.remote;
+    state.filters.search = Criteria.state.loadedFilters.search;
+    state.filters.discipline = Criteria.state.loadedFilters.discipline.slice();
+    state.filters.role = Criteria.state.loadedFilters.role.slice();
+    state.filters.level = Criteria.state.loadedFilters.level.slice();
   }
   if (panelEl.dataset.preset === "target-today") {
     state.filters.postStatus = [panelEl.dataset.status];
@@ -621,7 +452,10 @@ function initJobsPanel(panelEl) {
   // controls) drives the local-device auto-save; the "today" panel's
   // controls are hidden and never fire these handlers anyway.
   function notifyFiltersChanged() {
-    if (panelEl.dataset.preset === "target") maybePersistLocal(state.filters);
+    if (panelEl.dataset.preset !== "target") return;
+    const wasLocal = Criteria.state.uiState === "local";
+    Criteria.maybePersistLocal(state.filters);
+    if (!wasLocal && Criteria.state.uiState === "local") renderCriteriaBar();
   }
 
   // ---- Helpers ----
@@ -940,9 +774,9 @@ function initJobsPanel(panelEl) {
     const sel = $(".companySel");
     sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); notifyFiltersChanged(); };
     $('[data-action="preset"]').onclick = () => {
-      state.filters.discipline = loadedFilters.discipline.slice();
-      state.filters.role = loadedFilters.role.slice();
-      state.filters.level = loadedFilters.level.slice();
+      state.filters.discipline = Criteria.state.loadedFilters.discipline.slice();
+      state.filters.role = Criteria.state.loadedFilters.role.slice();
+      state.filters.level = Criteria.state.loadedFilters.level.slice();
       state.page = 1;
       ['[data-key="discipline"]', '[data-key="role"]', '[data-key="level"]'].forEach(s => { const c = $(s); if (c && c._sync) c._sync(); });
       renderTable();
@@ -972,10 +806,11 @@ function initJobsPanel(panelEl) {
 }
 
 async function main() {
-  await resolveCriteria();
+  await Criteria.resolveCriteria();
+  const loadedFilters = Criteria.state.loadedFilters;
   hasSavedCriteria = loadedFilters.discipline.length > 0 || loadedFilters.role.length > 0 || loadedFilters.level.length > 0;
   renderCriteriaBar();
-  if (justSeededFromLocal) renderSeedBanner();
+  if (Criteria.state.justSeededFromLocal) Criteria.renderSeedBanner(document.getElementById("seedBanner"));
   const handles = Array.from(document.querySelectorAll(".jobsPanel")).map(initJobsPanel);
   const targetPanel = handles.find(h => h.panelEl.dataset.preset === "target");
   if (targetPanel) wireCriteriaSave(targetPanel.getFilters);

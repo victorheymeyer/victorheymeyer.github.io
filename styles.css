@@ -232,6 +232,17 @@ td a:hover { text-decoration: underline; }
 .seed-banner-dismiss { background: none; border: none; color: var(--muted); font-size: var(--fs-lg); line-height: 1; cursor: pointer; padding: 0 var(--sp-4); }
 .seed-banner-dismiss:hover { color: var(--text); }
 
+/* ---- My Criteria page (inline expanded checklists, see
+   /projects/watchlist-jobs/my-criteria.html) - deliberately not the msdd
+   dropdown pattern above: every option is meant to be visible without a
+   click to open. ---- */
+.criteria-row { display: flex; flex-wrap: wrap; gap: var(--sp-16); margin-bottom: var(--sp-18); }
+.criteria-group { margin-bottom: var(--sp-18); }
+.criteria-group-label { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-8); }
+.criteria-opt-list { display: flex; flex-wrap: wrap; gap: var(--sp-4) var(--sp-16); }
+.criteria-opt { display: inline-flex; align-items: center; gap: var(--sp-6); color: var(--text); font-size: var(--fs-sm); cursor: pointer; padding: var(--sp-3) 0; }
+.criteria-actions { display: flex; align-items: center; gap: var(--sp-10); margin-top: var(--sp-10); }
+
 /* ---- Auth (login gate, see /projects/watchlist-jobs/private/) ---- */
 .auth-layout { display: flex; align-items: flex-start; gap: var(--sp-24); flex-wrap: wrap; }
 .auth-col { flex: 0 0 auto; }
