@@ -18,7 +18,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // CORS is not a security boundary here (a non-browser client can call this
 // endpoint regardless of headers) -- it's just what lets the browser fetch()
 // from the site's own origin succeed instead of being blocked client-side.
-const ALLOWED_ORIGIN = "https://victorheymeyer.github.io";
+const ALLOWED_ORIGIN = "https://heymeyer.com";
 const corsHeaders = {
   "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers": "content-type",
