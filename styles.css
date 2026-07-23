@@ -258,6 +258,7 @@ td a:hover { text-decoration: underline; }
 .authbox .field label { display: block; color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-6); }
 .signin-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-12); }
 .signin-row .signin-or { color: var(--muted); font-size: var(--fs-sm); }
+.signin-row a.clearbtn { text-decoration: none; }
 .authbox .field input { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-8) var(--sp-10); font-size: var(--fs-sm); }
 .authbox .meta { font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
 .authbox .meta strong { color: var(--text); }
