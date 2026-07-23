@@ -21,7 +21,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ALLOWED_ORIGIN = "https://heymeyer.com";
 const corsHeaders = {
   "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Headers": "content-type",
+  "Access-Control-Allow-Headers": "content-type, apikey, authorization",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
