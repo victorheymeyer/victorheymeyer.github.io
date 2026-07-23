@@ -1,3 +1,2 @@
-jobhive-py
-beautifulsoup4
+projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl
 supabase

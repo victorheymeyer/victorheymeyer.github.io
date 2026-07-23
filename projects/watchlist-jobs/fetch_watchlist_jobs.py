@@ -4,11 +4,9 @@ import html as html_mod
 import os
 import re
 import sys
-import time
 from datetime import datetime, timedelta, timezone
 
-import httpx
-from jobhive.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper, LeverScraper, WorkdayScraper
+from ats_scrapers.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper, LeverScraper, WorkdayScraper
 from supabase import create_client
 
 SUPABASE_URL = os.environ["JOBS_SUPABASE_URL"]
@@ -28,122 +26,38 @@ SCRAPERS = {
     "workday": WorkdayScraper,
 }
 
-# --- HTML description capture -------------------------------------------------
-# jobhive flattens descriptions to plain text (Greenhouse: strips all tags;
-# Ashby: picks descriptionPlain), destroying paragraph/bullet structure before
-# we ever see it. To get renderable HTML we re-fetch the SAME public, no-auth
-# endpoints jobhive uses and pull the HTML field directly, keyed by ats_id.
+# --- Description fingerprint (hash re-anchoring) ------------------------------
+# The hash that gates the LLM scoring pipeline must not be a field a third
+# party defines. ats-scrapers decides the shape of Job.description on its own
+# terms (HTML for Greenhouse, HTML-preferred for Ashby, plain text for others)
+# and that shape already moved once across a version bump -- jobhive-py 0.1.0
+# gave Greenhouse/Ashby as stripped plain text; ats-scrapers 0.2.0 gives HTML.
+# Hashing description_fingerprint()'s output instead of the raw field means a
+# future upstream formatting change can't silently rewrite every hash again.
 #
-# Each extractor returns {str(ats_id): html_string}. To support a new ATS later,
-# add one extractor and register it below. Any ATS without an extractor simply
-# keeps jobhive's plain text (graceful fallback, nothing breaks).
-#
-# NOTE: Ashby no longer uses this two-fetch extractor pattern. It has its own
-# single-fetch path (fetch_ashby_single, below) because Ashby's board returns
-# both descriptionPlain and descriptionHtml in one payload, so one request
-# replaces the old jobhive-fetch + extractor double-fetch. Greenhouse stays on
-# the double-fetch: its board API returns HTML only (no native plain-text
-# field), so bypassing jobhive there would move the hash source onto
-# tag-stripped text. Deferred until the fetch count actually hurts.
+# Storage of job_content.description is unchanged: raw HTML still goes in.
+# Only the hash input changes.
 
-def _greenhouse_html_map(slug, client):
-    url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
-    resp = client.get(url)
-    resp.raise_for_status()
-    out = {}
-    for job in resp.json().get("jobs", []):
-        content = job.get("content")
-        if isinstance(content, str) and content.strip():
-            # Greenhouse sends entity-escaped HTML; one unescape pass yields
-            # real tags. Do NOT strip tags and do NOT unescape twice.
-            out[str(job["id"])] = html_mod.unescape(content)
-    return out
+HASH_ALGO = "plain-v1"
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
 
 
-HTML_EXTRACTORS = {
-    "greenhouse": _greenhouse_html_map,
-}
+def description_fingerprint(value):
+    """Deterministic plain-text projection used ONLY for change detection.
 
-
-def _get_with_retry(client, url, *, max_retries=3, base_delay=1.5):
-    """Small sync GET with retry, mirroring jobhive's own Ashby fetch policy.
-
-    Retries transport errors and 429/5xx responses with backoff (honoring a
-    numeric Retry-After header when present). Non-retryable statuses (404, 403,
-    etc.) surface immediately via raise_for_status(). This restores the retry
-    safety jobhive's .fetch() gave us for free, now that the single-fetch Ashby
-    path bypasses jobhive's fetch entirely.
+    Strip tags first so escaped angle brackets survive as literal text, then
+    unescape entities, then collapse all whitespace. Dependency-free on
+    purpose: pulling in html2text would reintroduce the exact class of
+    upstream-drift problem this is fixing.
     """
-    for attempt in range(1, max_retries + 1):
-        try:
-            resp = client.get(url)
-        except httpx.HTTPError:
-            if attempt == max_retries:
-                raise
-            time.sleep(base_delay * attempt)
-            continue
-        if resp.status_code == 200:
-            return resp
-        if resp.status_code == 429 or 500 <= resp.status_code < 600:
-            if attempt == max_retries:
-                resp.raise_for_status()  # out of retries: surface the error
-            retry_after = resp.headers.get("Retry-After")
-            delay = (
-                float(retry_after) if retry_after and retry_after.isdigit()
-                else base_delay * (2 ** attempt)
-            )
-            time.sleep(delay)
-            continue
-        # Non-retryable status: raise now rather than burning attempts.
-        resp.raise_for_status()
-    # Unreachable in practice (every path above returns or raises), but keeps
-    # the function total for linters and guards against logic drift.
-    raise RuntimeError(f"_get_with_retry exhausted without resolving: {url}")
-
-
-def fetch_ashby_single(slug, client):
-    """Single-fetch Ashby path (replaces jobhive-fetch + old _ashby_html_map).
-
-    Ashby's public board returns descriptionPlain AND descriptionHtml in the
-    same payload, so ONE request gives us everything the old two-fetch design
-    needed two for. We reuse jobhive's own AshbyScraper._parse_job on the
-    payload -- a pure function, no network -- so every stored field is produced
-    by the exact same mapping as before. Only the fetch count changes (2 -> 1).
-
-    Because the record comes from jobhive's own parser and the hash is computed
-    (downstream, in main) on that parser's `description` field, which is
-    `descriptionPlain or descriptionHtml or None` verbatim, the stored rows and
-    their description_hash values are byte-identical to the old path. The
-    cutover is inert on stored data; it only removes the redundant second fetch
-    (and the record/HTML desync race that two separate fetches allowed).
-
-    Returns (jobs, html_map), matching the shape main() already consumes:
-      jobs      : list[jobhive.models.Job]
-      html_map  : {str(ats_id): descriptionHtml} for jobs with real HTML
-
-    NOTE: this reaches into AshbyScraper._parse_job, a private method. Safe
-    while pinned to jobhive-py==0.1.0. If that pin ever moves, re-verify the
-    Ashby field mapping against the new jobhive source before trusting this.
-    Ashby boards are bare-slug (scraper_kwargs is an Eightfold concern), so no
-    kwargs are threaded here.
-    """
-    url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}?includeCompensation=true"
-    resp = _get_with_retry(client, url)
-    payload = resp.json()
-
-    # Constructed only to reuse _parse_job; .fetch() is never called, so this
-    # instance issues no network request of its own.
-    parser = AshbyScraper(slug)
-
-    jobs, html_map = [], {}
-    for item in payload.get("jobs", []):
-        jobs.append(parser._parse_job(item))
-        desc_html = item.get("descriptionHtml")
-        # Same guard the old _ashby_html_map used: only real, non-blank HTML
-        # enters the map; anything else falls back to plain text in main().
-        if isinstance(desc_html, str) and desc_html.strip():
-            html_map[str(item["id"])] = desc_html
-    return jobs, html_map
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = _TAG_RE.sub(" ", value)
+    text = html_mod.unescape(text)
+    text = _WS_RE.sub(" ", text).strip()
+    return text or None
 # -----------------------------------------------------------------------------
 
 # --- Discipline classification (frozen v4) -----------------------------------
@@ -410,11 +324,11 @@ snapshot_date = datetime.now(timezone.utc).date().isoformat()
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title", "location",
              "is_remote", "department", "team", "employment_type", "salary_min", "salary_max",
              "salary_currency", "posted_at", "fetched_at", "url", "apply_url",
-             "description_hash"]
+             "description_hash", "hash_algo"]
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
             "url", "apply_url", "last_seen", "fetched_at", "discipline", "role_keyword",
             "level", "raw", "description_change_count",
-            "description_last_change_chars", "description_plain_len"]
+            "description_last_change_chars", "description_plain_len", "requisition_id"]
 
 # description_last_change is not tracked here: it duplicated the existing
 # current_version_first_seen column (verified byte-identical), which
@@ -422,7 +336,7 @@ DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "d
 # onto that column; the jobs_location_flags view aliases it back to the
 # description_last_change name for existing consumers.
 CHANGE_STATE_COLS = ["watchlist_company", "ats_id", "current_description_hash",
-                      "description_change_count",
+                      "hash_algo", "description_change_count",
                       "description_last_change_chars", "description_plain_len"]
 
 
@@ -466,6 +380,8 @@ def load_change_tracking_state():
     column, already kept in sync by the refresh_job_freshness RPC after
     every run (it only updates when the day's hash is both present and
     different). Reusing it here avoids tracking the same hash twice.
+    hash_algo travels alongside it so the comparison below can tell a
+    hashing-algorithm change apart from a real content change.
 
     Paginated in chunks of 1000, PostgREST's default max rows per request.
     A short final page ends the read; anything else raises rather than
@@ -507,104 +423,105 @@ def main():
     fact_rows, dim_rows = [], []
     failures = []
 
-    http = httpx.Client(timeout=30, follow_redirects=True)
-    try:
-        for entry in watchlist:
-            company, ats, slug = entry["company"], entry["ats"], entry["slug"]
-            scraper_kwargs = entry.get("scraper_kwargs") or {}
-            if ats not in SCRAPERS:
-                print(f"SKIP {company:12s}: unknown ats '{ats}' (no scraper)")
-                failures.append(company)
-                continue
-            try:
-                if ats == "ashby":
-                    # Single-fetch path: one request to Ashby yields BOTH the
-                    # jobhive-parsed record and the HTML, so we skip the old
-                    # jobhive-fetch + _ashby_html_map double-fetch. Stored rows
-                    # (and their description_hash) are byte-identical to the
-                    # old path; only the fetch count drops from 2 to 1.
-                    jobs, html_map = fetch_ashby_single(slug, http)
+    for entry in watchlist:
+        company, ats, slug = entry["company"], entry["ats"], entry["slug"]
+        scraper_kwargs = entry.get("scraper_kwargs") or {}
+        if ats not in SCRAPERS:
+            print(f"SKIP {company:12s}: unknown ats '{ats}' (no scraper)")
+            failures.append(company)
+            continue
+        try:
+            jobs = SCRAPERS[ats](slug, **scraper_kwargs).fetch()
+
+            for j in jobs:
+                d = j.model_dump(mode="json")
+                d["snapshot_date"] = snapshot_date
+                d["watchlist_company"] = company
+                d["ats_id"] = str(d.get("ats_id"))
+                d["last_seen"] = snapshot_date
+
+                # Hash a normalized plain-text projection of the description
+                # (see description_fingerprint above), not the raw field --
+                # ats-scrapers decides the raw shape, and that shape already
+                # changed once across a version bump.
+                raw_description = d.get("description")
+                fingerprint = description_fingerprint(raw_description)
+                new_hash = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest() if fingerprint else None
+                d["description_hash"] = new_hash
+                d["hash_algo"] = HASH_ALGO
+
+                # Char-delta change tracking, computed on the fingerprint
+                # length rather than the raw stored description's length, so
+                # HTML markup weight never registers as a content change.
+                # new_hash/new_len are None together whenever today's
+                # description came back empty (a scraper miss, e.g.
+                # Microsoft's Eightfold capture flakes on ~80% of days) --
+                # require new_hash is not None, not just prev_hash, or every
+                # such miss would register as a "change" against the last
+                # real hash.
+                #
+                # Algo-aware: if prev_algo doesn't match this run's HASH_ALGO
+                # (including every pre-migration row, where hash_algo is
+                # still NULL), prev_hash was computed by a different
+                # normalizer -- a mismatch there reflects the algorithm
+                # switch, not necessarily a content edit, so it must not
+                # register as a change. refresh_job_freshness applies the
+                # same rule to current_version_first_seen. This is what lets
+                # a future algorithm change self-heal on its own next run,
+                # with no cutover-night script. Accepted limitation: a
+                # genuine content edit landing on the exact same run as an
+                # algorithm switch is indistinguishable from the switch
+                # itself and gets swallowed -- one run's blind spot, not
+                # ongoing.
+                new_len = len(fingerprint) if fingerprint else None
+                prev = change_state.get((company, d["ats_id"]))
+                prev_hash = prev["current_description_hash"] if prev else None
+                prev_algo = prev.get("hash_algo") if prev else None
+
+                if prev is None:
+                    change_count, last_chars = 0, None
+                elif prev_algo != HASH_ALGO:
+                    change_count = prev["description_change_count"] or 0
+                    last_chars = prev["description_last_change_chars"]
+                elif prev_hash is not None and new_hash is not None and new_hash != prev_hash:
+                    change_count = (prev["description_change_count"] or 0) + 1
+                    prev_len = prev["description_plain_len"]
+                    last_chars = (new_len - prev_len) if (new_len is not None and prev_len is not None) else None
                 else:
-                    jobs = SCRAPERS[ats](slug, **scraper_kwargs).fetch()
+                    change_count = prev["description_change_count"] or 0
+                    last_chars = prev["description_last_change_chars"]
 
-                    # Supplement with real HTML descriptions where we have an
-                    # extractor for this ATS. Failure here is non-fatal: we fall
-                    # back to jobhive's plain text for this company.
-                    html_map = {}
-                    extractor = HTML_EXTRACTORS.get(ats)
-                    if extractor:
-                        try:
-                            html_map = extractor(slug, http)
-                        except Exception as e:
-                            print(f"WARN {company:12s} HTML fetch failed "
-                                  f"({type(e).__name__}: {e}); using plain text")
+                d["description_change_count"] = change_count
+                d["description_last_change_chars"] = last_chars
+                # Only refresh the length helper when today's text is
+                # real; on a null-hash day, keep the last known length
+                # so the next real change can still compute a delta.
+                d["description_plain_len"] = (
+                    new_len if new_len is not None
+                    else (prev["description_plain_len"] if prev else None)
+                )
 
-                for j in jobs:
-                    d = j.model_dump(mode="json")
-                    d["snapshot_date"] = snapshot_date
-                    d["watchlist_company"] = company
-                    d["ats_id"] = str(d.get("ats_id"))
-                    d["last_seen"] = snapshot_date
+                # d["description"] is already what ats-scrapers returned
+                # (HTML for Greenhouse, HTML-preferred for Ashby, etc.) --
+                # storage-ready natively, no second fetch or html_map merge
+                # needed.
 
-                    # Hash the PLAIN text (stable change-detection signal,
-                    # noise-resistant to HTML re-serialization, zero churn).
-                    plain = d.get("description")
-                    new_hash = hashlib.sha256(plain.encode("utf-8")).hexdigest() if plain else None
-                    d["description_hash"] = new_hash
+                # Classify discipline from title (frozen v4 rules).
+                d["discipline"] = classify_discipline(d.get("title"))
 
-                    # Char-delta change tracking. new_hash/new_len are None
-                    # together whenever today's plain text came back empty
-                    # (a scraper miss, e.g. Microsoft's Eightfold capture
-                    # flakes on ~80% of days) -- require new_hash is not
-                    # None, not just prev_hash, or every such miss would
-                    # register as a "change" against the last real hash.
-                    new_len = len(plain) if plain else None
-                    prev = change_state.get((company, d["ats_id"]))
-                    prev_hash = prev["current_description_hash"] if prev else None
+                # Classify role archetype from title (Title_Role_Rules v4).
+                d["role_keyword"] = classify_role(d.get("title"))
 
-                    if prev is None:
-                        change_count, last_chars = 0, None
-                    elif prev_hash is not None and new_hash is not None and new_hash != prev_hash:
-                        change_count = (prev["description_change_count"] or 0) + 1
-                        prev_len = prev["description_plain_len"]
-                        last_chars = (new_len - prev_len) if (new_len is not None and prev_len is not None) else None
-                    else:
-                        change_count = prev["description_change_count"] or 0
-                        last_chars = prev["description_last_change_chars"]
+                # Classify seniority level from title (frozen v1 rules).
+                d["level"] = classify_level(d.get("title"))
 
-                    d["description_change_count"] = change_count
-                    d["description_last_change_chars"] = last_chars
-                    # Only refresh the length helper when today's text is
-                    # real; on a null-hash day, keep the last known length
-                    # so the next real change can still compute a delta.
-                    d["description_plain_len"] = (
-                        new_len if new_len is not None
-                        else (prev["description_plain_len"] if prev else None)
-                    )
+                fact_rows.append({k: d.get(k) for k in FACT_COLS})
+                dim_rows.append({k: d.get(k) for k in DIM_COLS})
 
-                    # Store HTML for display; fall back to plain text if we
-                    # didn't get HTML for this job.
-                    d["description"] = html_map.get(d["ats_id"]) or plain
-
-                    # Classify discipline from title (frozen v4 rules).
-                    d["discipline"] = classify_discipline(d.get("title"))
-
-                    # Classify role archetype from title (Title_Role_Rules v4).
-                    d["role_keyword"] = classify_role(d.get("title"))
-
-                    # Classify seniority level from title (frozen v1 rules).
-                    d["level"] = classify_level(d.get("title"))
-
-                    fact_rows.append({k: d.get(k) for k in FACT_COLS})
-                    dim_rows.append({k: d.get(k) for k in DIM_COLS})
-
-                print(f"OK   {company:12s} ({ats}/{slug}): {len(jobs)} jobs, "
-                      f"{len(html_map)} html")
-            except Exception as e:
-                print(f"FAIL {company:12s} ({ats}/{slug}): {type(e).__name__}: {e}")
-                failures.append(company)
-    finally:
-        http.close()
+            print(f"OK   {company:12s} ({ats}/{slug}): {len(jobs)} jobs")
+        except Exception as e:
+            print(f"FAIL {company:12s} ({ats}/{slug}): {type(e).__name__}: {e}")
+            failures.append(company)
 
     def dedupe(rows, keys):
         seen = {}

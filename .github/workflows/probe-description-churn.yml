@@ -1,0 +1,33 @@
+name: Probe Description Churn
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_args:
+        description: 'Args for probe_description_churn.py (blank = one company per ATS, or "--all", or "acme,other-corp")'
+        required: false
+        default: ""
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r projects/watchlist-jobs/requirements.txt
+
+      - name: Verify vendored ats-scrapers resolved
+        run: pip show ats-scrapers
+
+      - name: Run churn probe
+        env:
+          JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
+          JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
+        run: python projects/watchlist-jobs/probe_description_churn.py ${{ inputs.probe_args }}
