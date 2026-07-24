@@ -16,6 +16,16 @@
     return dt.toISOString().slice(0, 10);
   }
 
+  // Days since a date string, or null when absent/unparseable (mirrors the
+  // daysOld() helper each host page keeps for its own Days Old filter).
+  function daysOld(d) {
+    if (!d) return null;
+    const dt = new Date(d);
+    if (isNaN(dt)) return null;
+    const ms = Date.now() - dt.getTime();
+    return ms < 0 ? 0 : Math.floor(ms / 86400000);
+  }
+
   function fmtSalary(r) {
     if (r.salary_min == null && r.salary_max == null) return "";
     const cur = r.salary_currency || "";
@@ -113,6 +123,13 @@
     const atsId = esc(r.ats_id || "");
     const lastDescChange = r.description_last_change ? fmtDate(r.description_last_change) : "-";
     const descChangeCount = r.description_change_count != null ? r.description_change_count : "-";
+    const postStatus = r.post_status ? esc(r.post_status) : "unclassified";
+    const daysOldSuffix = !r.post_status
+      ? (() => {
+          const age = daysOld(r.posted_at) != null ? daysOld(r.posted_at) : daysOld(r.first_seen);
+          return age != null ? ", Days Old: " + age : "";
+        })()
+      : "";
 
     const disc = r.discipline ? esc(r.discipline) : "-";
     const roleKw = r.role_keyword ? esc(r.role_keyword) : "-";
@@ -133,7 +150,8 @@
         ' | Last Seen: ' + lastSeen +
         ' | First Seen: ' + firstSeen +
         ' | Last Desc Change: ' + lastDescChange +
-        ' | Char # delta: ' + descChangeCount + '</div>' +
+        ' | Char # delta: ' + descChangeCount +
+        ' (Status: ' + postStatus + daysOldSuffix + ')</div>' +
       '<div class="metaline"><span class="lbl">Other:</span> Type: ' + employmentType +
         ' | Remote: ' + isRemoteLabel +
         ' | Salary: ' + salary + '</div>' +
