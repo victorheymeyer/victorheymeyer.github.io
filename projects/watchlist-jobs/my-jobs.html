@@ -639,7 +639,7 @@ function initJobsPanel(panelEl) {
       if (!classifierMatch(f.level, r.level)) return false;
       if (!daysOldMatch(f.daysOld, r)) return false;
       if (!classifierMatch(f.postStatus, r.post_status)) return false;
-      if (f.newCompany && r.is_new_company) return false;
+      if (f.newCompany && r.is_new_company && r.post_status === "New*") return false;
       if (f.wa || f.remote) {
         const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_wa);
         if (!ok) return false;
