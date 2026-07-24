@@ -1,3 +1,10 @@
 projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl
 supabase
+# beautifulsoup4 is an optional extra of ats-scrapers ([scrapers]/[all]),
+# not a core dependency -- the vendored wheel's own metadata won't pull it
+# in. Google's scraper lazy-imports it for full description extraction
+# (Minimum/Preferred qualifications, Responsibilities) and silently falls
+# back to a short meta-description blurb with no error if it's missing, so
+# an absence here degrades data quietly instead of failing loudly. Pin it
+# explicitly.
 beautifulsoup4
