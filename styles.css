@@ -253,7 +253,7 @@ td a:hover { text-decoration: underline; }
 .roadmap-list li::before { content: "\2022"; position: absolute; left: 0; color: var(--accent); }
 .hint-inline { color: var(--muted); font-size: var(--fs-xs); }
 
-.authbox { max-width: 320px; width: 320px; }
+.authbox { max-width: 344px; width: 344px; }
 .authbox .field { margin-bottom: var(--sp-14); }
 .authbox .field label { display: block; color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-6); }
 .signin-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-12); }
@@ -263,6 +263,7 @@ td a:hover { text-decoration: underline; }
 .authbox .meta { font-size: var(--fs-sm); margin: 0 0 var(--sp-8); }
 .authbox .meta strong { color: var(--text); }
 .authbox .field select { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-8) var(--sp-10); font-size: var(--fs-sm); }
+.turnstile-wrap { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 
 /* ---- Waitlist signup ---- */
 /* Honeypot: present in the DOM and reachable by screen readers getting no

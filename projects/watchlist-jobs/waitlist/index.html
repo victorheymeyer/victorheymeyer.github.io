@@ -30,7 +30,9 @@
         <input type="text" id="companyUrl" tabindex="-1" autocomplete="off">
       </div>
       <div class="field">
-        <div class="cf-turnstile" data-sitekey="0x4AAAAAAD7jUWLfTuUG_Z09" data-callback="onTurnstileToken" data-expired-callback="onTurnstileExpired" data-size="flexible"></div>
+        <div class="turnstile-wrap">
+          <div class="cf-turnstile" data-sitekey="0x4AAAAAAD7jUWLfTuUG_Z09" data-callback="onTurnstileToken" data-expired-callback="onTurnstileExpired" data-size="flexible"></div>
+        </div>
       </div>
       <button type="submit" class="clearbtn" id="joinSubmitBtn" disabled>Join waitlist</button>
     </form>
