@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from ats_scrapers.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper, LeverScraper, WorkdayScraper
+from ats_scrapers.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper, LeverScraper, WorkdayScraper, WorkableScraper, SmartRecruitersScraper
 from supabase import create_client
 
 # The site's audience is Seattle-area jobs, so a "day" of postings is a Seattle
@@ -31,6 +31,8 @@ SCRAPERS = {
     "eightfold": EightfoldScraper,
     "lever": LeverScraper,
     "workday": WorkdayScraper,
+    "workable": WorkableScraper,
+    "smartrecruiters": SmartRecruitersScraper,
 }
 
 # --- Description fingerprint (hash re-anchoring) ------------------------------
