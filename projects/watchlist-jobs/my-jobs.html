@@ -32,6 +32,7 @@
         <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level values from your saved criteria">Apply Saved Criteria</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
+        <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" class="newCoChk"> Exclude new companies</label>
         <button class="clearbtn" data-action="clear">Clear</button>
       </div>
       <div class="hint count"></div>
@@ -65,6 +66,7 @@
         <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level values from your saved criteria">Apply Saved Criteria</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
+        <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" class="newCoChk"> Exclude new companies</label>
         <button class="clearbtn" data-action="clear">Clear</button>
       </div>
       <div class="hint count"></div>
@@ -97,6 +99,7 @@
         <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level values from your saved criteria">Apply Saved Criteria</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
+        <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" class="newCoChk"> Exclude new companies</label>
         <button class="clearbtn" data-action="clear">Clear</button>
         <button class="clearbtn" id="saveCriteriaBtn" style="display:none">Save criteria</button>
         <span class="hint" id="saveCriteriaMsg"></span>
@@ -136,7 +139,7 @@ const LIST_COLUMNS = [
   "department","team","employment_type","is_remote","salary_min","salary_max","salary_currency",
   "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
   "discipline","role_keyword","level","description_last_change","description_change_count",
-  "post_status"
+  "post_status","is_new_company"
 ].join(",");
 
 // Days Old filter buckets. Ranges overlap by design (e.g. "Today" is a
@@ -504,6 +507,7 @@ function initJobsPanel(panelEl) {
     $(".search").value = state.filters.search;
     $(".waChk").checked = state.filters.wa;
     $(".remChk").checked = state.filters.remote;
+    $(".newCoChk").checked = state.filters.newCompany;
 
     // classifier multi-selects (OR within a dropdown, AND across dropdowns; "(unclassified)" matches nulls)
     // Only discipline/role/level are saved criteria, so only they report changes back for persistence.
@@ -635,6 +639,7 @@ function initJobsPanel(panelEl) {
       if (!classifierMatch(f.level, r.level)) return false;
       if (!daysOldMatch(f.daysOld, r)) return false;
       if (!classifierMatch(f.postStatus, r.post_status)) return false;
+      if (f.newCompany && r.is_new_company) return false;
       if (f.wa || f.remote) {
         const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_wa);
         if (!ok) return false;
@@ -784,12 +789,14 @@ function initJobsPanel(panelEl) {
     };
     $(".waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); notifyFiltersChanged(); };
     $(".remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); notifyFiltersChanged(); };
+    $(".newCoChk").onchange = (e) => { state.filters.newCompany = e.target.checked; state.page = 1; renderTable(); notifyFiltersChanged(); };
     $('[data-action="clear"]').onclick = () => {
       state.filters = defaultFilters();
       state.page = 1;
       search.value = ""; sel.value = "";
       $(".waChk").checked = false;
       $(".remChk").checked = false;
+      $(".newCoChk").checked = false;
       ['[data-key="discipline"]', '[data-key="role"]', '[data-key="level"]', '[data-key="daysOld"]', '[data-key="postStatus"]'].forEach(s => { const c = $(s); if (c && c._reset) c._reset(); });
       renderTable();
       notifyFiltersChanged();

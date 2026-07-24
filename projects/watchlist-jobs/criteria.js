@@ -22,7 +22,7 @@
   const UNCLASSIFIED = "__unclassified__";
 
   function defaultFilters() {
-    return { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] };
+    return { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [], newCompany: false };
   }
 
   // Merge a saved blob over the default shape so a blob missing a key (or an
