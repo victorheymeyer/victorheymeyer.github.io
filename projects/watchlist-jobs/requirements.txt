@@ -1,5 +1,8 @@
 projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl
 supabase
+# Pinned so zoneinfo can resolve America/Los_Angeles even if the runner
+# image's system tz database is missing or stale.
+tzdata
 # beautifulsoup4 is an optional extra of ats-scrapers ([scrapers]/[all]),
 # not a core dependency -- the vendored wheel's own metadata won't pull it
 # in. Google's scraper lazy-imports it for full description extraction

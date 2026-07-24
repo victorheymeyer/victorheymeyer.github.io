@@ -5,9 +5,16 @@ import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from ats_scrapers.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper, LeverScraper, WorkdayScraper
 from supabase import create_client
+
+# The site's audience is Seattle-area jobs, so a "day" of postings is a Seattle
+# calendar day, not a UTC one. Seattle sits 7-8 hours behind UTC, so any run
+# landing in UTC's early morning is still the previous Seattle evening --
+# bucketing by UTC date would let one Seattle day split across two snapshots.
+SEATTLE_TZ = ZoneInfo("America/Los_Angeles")
 
 SUPABASE_URL = os.environ["JOBS_SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["JOBS_SUPABASE_SERVICE_KEY"]
@@ -319,7 +326,7 @@ def classify_level(title):
     return None
 # -----------------------------------------------------------------------------
 
-snapshot_date = datetime.now(timezone.utc).date().isoformat()
+snapshot_date = datetime.now(SEATTLE_TZ).date().isoformat()
 
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title", "location",
              "is_remote", "department", "team", "employment_type", "salary_min", "salary_max",
