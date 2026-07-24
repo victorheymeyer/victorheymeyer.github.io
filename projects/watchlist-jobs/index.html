@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Watchlist Jobs - Seattle</title>
+<title>New Seattle Job Listings</title>
 <link rel="stylesheet" href="/styles.css">
 <script defer src="/site.js"></script>
 <script defer src="/job-detail.js"></script>
@@ -11,9 +11,9 @@
 <body>
 <div id="siteNav"></div>
 <div class="wrap">
-  <h1>Watchlist Jobs - Seattle</h1>
+  <h1>New Seattle Job Listings</h1>
   <div class="sub" id="sub">Loading the latest snapshot...</div>
-  <div class="hint-inline">Want a heads up on new roles? <a href="/projects/watchlist-jobs/waitlist/">Join the waitlist</a>.</div>
+  <div class="hint-inline">Want a heads up on new roles that meet your criteria? <a href="/projects/watchlist-jobs/waitlist/">Join the waitlist</a>.</div>
 
   <div id="errBox"></div>
 
@@ -28,6 +28,7 @@
       <div class="msdd" id="postStatusDD"></div>
       <label class="chk"><input type="checkbox" id="waChk"> WA Jobs</label>
       <label class="chk"><input type="checkbox" id="remChk"> Remote-WA Jobs</label>
+      <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" id="newCoChk"> Exclude new companies</label>
       <button class="clearbtn" id="clearBtn">Clear</button>
     </div>
     <div id="count" class="hint"></div>
@@ -60,7 +61,8 @@ const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
   "department","team","employment_type","is_remote","salary_min","salary_max","salary_currency",
   "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
-  "discipline","role_keyword","level","description_last_change","description_change_count","post_status"
+  "discipline","role_keyword","level","description_last_change","description_change_count","post_status",
+  "is_new_company"
 ].join(",");
 
 // Sentinel value for the "(unclassified)" option in the classifier dropdowns
@@ -85,7 +87,7 @@ const state = {
   rows: [],
   snapshotDate: null,
   descCache: {},
-  filters: { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] },
+  filters: { company: "", wa: false, remote: false, newCompany: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] },
   page: 1,
   pageSize: 10,
   expanded: null,
@@ -233,8 +235,7 @@ async function init() {
 // ---- Render ----
 function render() {
   document.getElementById("sub").textContent =
-    "As of " + daysAgoLabel(state.snapshotDate) + " (" + fmtDateLong(state.snapshotDate) + ") | " + state.rows.length.toLocaleString() + " open roles across " +
-    new Set(state.rows.map(r => r.watchlist_company)).size + " companies" +
+    "As of " + daysAgoLabel(state.snapshotDate) + " (" + fmtDateLong(state.snapshotDate) + ")" +
     (state.fullyLoaded ? "" : " (loading full list for filtering/paging…)");
 
   // company dropdown
@@ -372,6 +373,7 @@ function applyFilters() {
     if (!classifierMatch(f.level, r.level)) return false;
     if (!daysOldMatch(f.daysOld, r)) return false;
     if (!classifierMatch(f.postStatus, r.post_status)) return false;
+    if (f.newCompany && r.is_new_company) return false;
     if (f.wa || f.remote) {
       const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_wa);
       if (!ok) return false;
@@ -511,12 +513,14 @@ function wireControls() {
   sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); };
   document.getElementById("waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
+  document.getElementById("newCoChk").onchange = (e) => { state.filters.newCompany = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("clearBtn").onclick = () => {
-    state.filters = { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] };
+    state.filters = { company: "", wa: false, remote: false, newCompany: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] };
     state.page = 1;
     search.value = ""; sel.value = "";
     document.getElementById("waChk").checked = false;
     document.getElementById("remChk").checked = false;
+    document.getElementById("newCoChk").checked = false;
     ["disciplineDD", "roleDD", "levelDD", "daysOldDD", "postStatusDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
     renderTable();
   };

@@ -252,6 +252,7 @@ td a:hover { text-decoration: underline; }
 .roadmap-list li { position: relative; padding-left: var(--sp-16); margin-bottom: var(--sp-9); font-size: var(--fs-sm); color: var(--text); }
 .roadmap-list li::before { content: "\2022"; position: absolute; left: 0; color: var(--accent); }
 .hint-inline { color: var(--muted); font-size: var(--fs-xs); }
+.hint-inline a { color: var(--accent); }
 
 .authbox { max-width: 344px; width: 344px; }
 .authbox .field { margin-bottom: var(--sp-14); }
