@@ -26,7 +26,6 @@
       <div class="msdd" id="levelDD"></div>
       <div class="msdd" id="daysOldDD"></div>
       <div class="msdd" id="postStatusDD"></div>
-      <button class="clearbtn" id="presetBtn" title="Apply the Discipline / Role / Level filters marked Y in the classifier rules">Target Filters</button>
       <label class="chk"><input type="checkbox" id="waChk"> WA Jobs</label>
       <label class="chk"><input type="checkbox" id="remChk"> Remote-WA Jobs</label>
       <button class="clearbtn" id="clearBtn">Clear</button>
@@ -66,33 +65,8 @@ const LIST_COLUMNS = [
 
 // Sentinel value for the "(unclassified)" option in the classifier dropdowns
 // (matches rows where discipline/role_keyword/level is null). Declared here,
-// ahead of its other use in buildMultiSelect()/classifierMatch() below, so
-// PRESET_FILTERS can reference it.
+// ahead of its other use in buildMultiSelect()/classifierMatch() below.
 const UNCLASSIFIED = "__unclassified__";
-
-// Categories flagged "Y" in classifier_rules.xlsx (column C of each tab) — the
-// discipline/role/level values considered a target match. Values must match
-// the discipline/role_keyword/level strings the classifier writes to the DB.
-const PRESET_FILTERS = {
-  discipline: [
-    "Data & Analytics", "Product Management", "Project/Program Management",
-    "Sales", "Marketing", "Finance", "Strategy", "Operations",
-    "Customer Success", "Other"
-  ],
-  role: [
-    "Chief of Staff", "Product Manager", "Program Manager", "Data Analyst/Analysis",
-    "Product Management", "Finance & Strategy", "Strategy & Operations",
-    "Business Planner/Planning", "Consultant", "Strategist", "Product Strategy", "Strategy",
-    "Strategic Finance", "Corp Dev", "Biz Dev", "Customer Success", "Marketing",
-    "Financial Planning", "Financing", "Treasury", "Analytics (Other)", "Finance (Other)",
-    "Analyst (Other)", "GTM (other)", "Operations (other)", "Program (Other)",
-    "Planning (other)", "Analysis (other)", UNCLASSIFIED
-  ],
-  level: [
-    "CXO", "VP", "GM", "Chief of Staff", "Senior Director", "Director", "Head of",
-    "Senior Principal", "Principal", "Staff", "Lead"
-  ]
-};
 
 // Days Old filter buckets. Ranges overlap by design (e.g. "Today" is a
 // subset of "Last 3 days", which is a subset of "Last 7 days") - a row
@@ -535,14 +509,6 @@ function wireControls() {
   search.oninput = () => { state.filters.search = search.value; state.page = 1; renderTable(); };
   const sel = document.getElementById("companySel");
   sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); };
-  document.getElementById("presetBtn").onclick = () => {
-    state.filters.discipline = PRESET_FILTERS.discipline.slice();
-    state.filters.role = PRESET_FILTERS.role.slice();
-    state.filters.level = PRESET_FILTERS.level.slice();
-    state.page = 1;
-    ["disciplineDD", "roleDD", "levelDD"].forEach(id => { const c = document.getElementById(id); if (c && c._sync) c._sync(); });
-    renderTable();
-  };
   document.getElementById("waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("clearBtn").onclick = () => {
