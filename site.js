@@ -40,12 +40,43 @@
     inner.appendChild(a);
   });
 
-  // Right-aligned external link.
+  // Right-aligned auth link: Sign In / Sign Out, mirroring the affordance in
+  // my-jobs.html's criteria bar (renderCriteriaBar there) so the whole site
+  // reflects the same signed-in state, not just that one page.
+  const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+  const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+
   const right = document.createElement("a");
-  right.className = "navlink navright";
-  right.href = "https://heymeyer.com";
-  right.textContent = "heymeyer.com";
+  right.className = "clearbtn navright";
   inner.appendChild(right);
+
+  function renderSignedOut() {
+    right.textContent = "Sign In";
+    right.href = "/projects/watchlist-jobs/private/";
+    right.onclick = null;
+  }
+  function renderSignedIn(supabaseClient) {
+    right.textContent = "Sign Out";
+    right.href = "#";
+    right.onclick = async (e) => {
+      e.preventDefault();
+      right.onclick = null;
+      await supabaseClient.auth.signOut();
+      location.reload();
+    };
+  }
+  renderSignedOut();
+
+  if (window.supabase) {
+    const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+    supabaseClient.auth.getSession().then(({ data }) => {
+      if (data.session) renderSignedIn(supabaseClient);
+    });
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      if (session) renderSignedIn(supabaseClient);
+      else renderSignedOut();
+    });
+  }
 
   nav.appendChild(inner);
 

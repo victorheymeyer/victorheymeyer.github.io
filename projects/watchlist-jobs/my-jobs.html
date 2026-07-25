@@ -119,6 +119,7 @@
 
   <footer class="site-footer">
     <p>© 2026 Victor Heymeyer | Seattle, WA |<a href="https://www.linkedin.com/in/heymeyer/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> </p>
+    <a class="footer-right" href="https://heymeyer.com" target="_blank" rel="noopener noreferrer">heymeyer.com</a>
   </footer>
 </div>
 
@@ -192,12 +193,6 @@ function renderCriteriaBar() {
       location.reload();
     };
     bar.appendChild(btn);
-  } else {
-    const link = document.createElement("a");
-    link.className = "clearbtn";
-    link.href = "/projects/watchlist-jobs/private/";
-    link.textContent = "Sign In";
-    bar.appendChild(link);
   }
 }
 
