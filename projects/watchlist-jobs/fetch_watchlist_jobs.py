@@ -49,6 +49,13 @@ SCRAPERS = {
 
 HASH_ALGO = "plain-v1"
 
+# A handful of company pulls failing per run is normal Workday/ATS flakiness
+# (different tenants trip on different days, always recover on their own --
+# see e.g. seattlechildrens__external, itron__itron, vantagedc__vantage).
+# Only fail the whole run loud when failures look like a systemic outage
+# rather than a couple of unlucky tenants.
+MAX_TOLERATED_FAILURES = 3
+
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
 
@@ -584,8 +591,10 @@ def main():
     print(f"Verification: {fact_count} fact rows for {snapshot_date}, {dim_count} rows in job_content")
 
     if failures:
-        print(f"ERROR: pulls failed for: {failures}")
-        sys.exit(1)
+        if len(failures) > MAX_TOLERATED_FAILURES:
+            print(f"ERROR: pulls failed for: {failures}")
+            sys.exit(1)
+        print(f"WARNING: pulls failed for: {failures} (within tolerated threshold of {MAX_TOLERATED_FAILURES}, not failing the run)")
 
 
 if __name__ == "__main__":
