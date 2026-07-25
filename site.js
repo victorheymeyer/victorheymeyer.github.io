@@ -3,7 +3,7 @@
 // this script picks up the change automatically. Paths are absolute from the
 // domain root, so they work from any page depth.
 (function () {
-  const BRAND = { label: "Jobs Home", href: "/projects/watchlist-jobs/" };
+  const BRAND = { label: "Seattle Jobs", href: "/projects/watchlist-jobs/" };
   const SITE_NAV = [
     { label: "Global", href: "/projects/watchlist-jobs/global.html" },
     { label: "Waitlist", href: "/projects/watchlist-jobs/waitlist/" },
