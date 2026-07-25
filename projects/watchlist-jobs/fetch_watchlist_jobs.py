@@ -76,7 +76,9 @@ def description_fingerprint(value):
     return text or None
 # -----------------------------------------------------------------------------
 
-# --- Discipline classification (frozen v4) -----------------------------------
+# --- Discipline classification (v5 - inside Title_Role_Rules_v7) -----------------------------------
+# V5: Added Communications and removed some of the Marketing rules into Comms
+# V4: Below
 # Maps a job title to one of 25 disciplines (craft/training, not org unit).
 # Ordered rules, first match wins: specific/technical craft is matched before
 # broad seniority words; Engineering (engineer/architect) precedes the
@@ -85,6 +87,7 @@ def description_fingerprint(value):
 # Re-run every load so rule changes self-heal existing rows on the next pull.
 
 _DISCIPLINE_RULES = [
+    ("Communications", r"\b(communications|\bcomms\b|public relations|\bpr\b|media relations|press secretary|press officer|publicist|spokesperson|speechwriter|public affairs|corporate affairs)\b", r"\bengineer\b|engineering manager|engineering lead|telecommunications|unified communications|solutions architect|communications security|data analyst|brand design|program manager|project manager|product manager"),
     ("Engineering", r"\b(engineer|engineering|architect|developer|\bsre\b|devops|firmware|technical lead|software|\bswe\b|penetration tester|propulsion analyst|thermal analyst)\b", None),
     ("Research", r"\b(research scientist|research engineer|researcher|applied scientist|research fellow|research intern|research lead|research manager|economist|ml researcher|ai researcher|machine learning researcher|postdoc|quantitative researcher|psychologist|fellows program|frontier agents intern)\b", None),
     ("Data & Analytics", r"\b(data analyst|business intelligence|bi analyst|analytics|data scientist|data science|business analyst|product analyst|digital analyst|insights|competitive intelligence|market intelligence|data quality)\b", None),
@@ -100,7 +103,7 @@ _DISCIPLINE_RULES = [
     ("Supply Chain / Procurement", r"\b(sourcing|global supply|supply manager|supplier|buyer|procurement|inventory|materials management|purchasing|logistics|supply chain|warehouse|supply materials)\b", None),
     ("Hospitality / Facilities", r"\b(chef|cook|barista|porter|mixologist|food service|hospitality|facilities|janitor|custodian|soft services)\b", None),
     ("Sales", r"\b(sales|account executive|\bae\b|account manager|\bsdr\b|\bbdr\b|sales development|business development|revenue|go.?to.?market|\bgtm\b|partnerships|partner development|partner manager|partner lead|partner specialist|alliance|alliances|channel|account lead|account specialist|renewals|renewal manager|value advisor|relationship manager|market manager|growth lead|growth manager|growth specialist|enterprise\b|market access)\b", None),
-    ("Marketing", r"\b(marketing|marketer|\bbrand\b|demand gen|demand generation|growth marketing|content|communications|\bcomms\b|social media|\bseo\b|\bsem\b|public relations|\bpr\b|copy|editor|events|campaign|paid media|analyst relations|web producer|photographer|technical writer)\b", None),
+    ("Marketing", r"\b(marketing|marketer|\bbrand\b|demand gen|demand generation|growth marketing|content|social media|\bseo\b|\bsem\b|copy|editor|events|campaign|paid media|analyst relations|web producer|photographer|technical writer)\b", None),
     ("Finance", r"\b(finance|financial|accounting|accountant|accounts payable|accounts receivable|controller|fp&a|treasury|audit|auditor|\btax\b|commissions|payroll|underwriter|underwriting|credit|collections|\bloan\b|mortgage|billing|capital markets|controllership|reporting|fraud|pricing|deal desk|deal pricing|investment|investments|liquidity|stock plan|stock administration|transfer pricing|lending)\b", None),
     ("Legal", r"\b(legal|counsel|attorney|paralegal|compliance|privacy|contracts manager|contract manager|contracts negotiator|sanctions|regulatory|immigration|trust & safety)\b", None),
     ("Strategy", r"\b(strategy|strategic|strategist|corporate development|corp dev|\bpolicy\b|government affairs|public policy|government incentives|land acquisition|site selection|real estate|construction manager|campus planning|site expansion)\b", None),
@@ -111,6 +114,8 @@ _DISCIPLINE_RULES = [
     ("Data & Analytics", r"\banalyst\b", None),
     ("Customer Success", r"\bspecialist\b", None),
 ]
+
+
 
 _DISCIPLINE_COMPILED = [
     (d, re.compile(p, re.I), re.compile(n, re.I) if n else None)
