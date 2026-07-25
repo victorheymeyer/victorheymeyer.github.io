@@ -24,11 +24,9 @@
       <div class="msdd" id="disciplineDD"></div>
       <div class="msdd" id="roleDD"></div>
       <div class="msdd" id="levelDD"></div>
-      <div class="msdd" id="daysOldDD"></div>
-      <div class="msdd" id="postStatusDD"></div>
-      <label class="chk"><input type="checkbox" id="waChk"> WA Jobs</label>
-      <label class="chk"><input type="checkbox" id="remChk"> Remote-WA Jobs</label>
-      <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" id="newCoChk"> Exclude new companies</label>
+      <label class="chk"><input type="checkbox" id="waChk" checked> WA Jobs</label>
+      <label class="chk"><input type="checkbox" id="remChk" checked> Remote-WA Jobs</label>
+      <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" id="newCoChk" checked> Exclude new companies</label>
       <button class="clearbtn" id="clearBtn">Clear</button>
     </div>
     <div id="count" class="hint"></div>
@@ -71,24 +69,17 @@ const LIST_COLUMNS = [
 // ahead of its other use in buildMultiSelect()/classifierMatch() below.
 const UNCLASSIFIED = "__unclassified__";
 
-// Days Old filter buckets. Ranges overlap by design (e.g. "Today" is a
-// subset of "Last 3 days", which is a subset of "Last 7 days") - a row
-// matches if ANY checked bucket's test() covers its age.
-const DAYS_OLD_OPTIONS = [
-  { value: "today", label: "Today", test: n => n === 0 },
-  { value: "last3", label: "Last 3 days", test: n => n < 4 },
-  { value: "last7", label: "Last 7 days", test: n => n < 8 },
-  { value: "8-14", label: "8-14 days", test: n => n >= 8 && n <= 14 },
-  { value: "15-30", label: "15-30 days", test: n => n >= 15 && n <= 30 },
-  { value: "31-60", label: "31-60 days", test: n => n >= 31 && n <= 60 },
-  { value: "61+", label: "61+ days", test: n => n >= 61 }
-];
+// Default filter view for this page: new (or new-because-new-company) roles,
+// with genuinely new companies excluded, restricted to WA/remote-WA jobs.
+function defaultFilters() {
+  return { company: "", wa: true, remote: true, newCompany: true, search: "", discipline: [], role: [], level: [] };
+}
 
 const state = {
   rows: [],
   snapshotDate: null,
   descCache: {},
-  filters: { company: "", wa: false, remote: false, newCompany: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] },
+  filters: defaultFilters(),
   page: 1,
   pageSize: 10,
   expanded: null,
@@ -253,8 +244,6 @@ function render() {
   buildMultiSelect("disciplineDD", "discipline", "discipline", "All disciplines");
   buildMultiSelect("roleDD", "role_keyword", "role", "All roles");
   buildMultiSelect("levelDD", "level", "level", "All levels");
-  buildDaysOldSelect("daysOldDD", "daysOld", "All ages");
-  buildMultiSelect("postStatusDD", "post_status", "postStatus", "All statuses");
 
   document.getElementById("listPanel").style.display = "block";
 
@@ -335,45 +324,22 @@ function buildMultiSelect(containerId, dataField, filterKey, allLabel) {
   buildCheckboxDropdown(containerId, filterKey, allLabel, optionsHtml);
 }
 
-// Fixed bucket list from DAYS_OLD_OPTIONS (not derived from data), plus an
-// "(unclassified)" option when some row has no effective age.
-function buildDaysOldSelect(containerId, filterKey, allLabel) {
-  const hasNull = state.rows.some(r => !effectiveAge(r));
-  const optionsHtml =
-    DAYS_OLD_OPTIONS.map(o => '<label class="msdd-opt"><input type="checkbox" value="' + o.value + '"> ' + JobDetail.esc(o.label) + '</label>').join("") +
-    (hasNull ? '<label class="msdd-opt"><input type="checkbox" value="' + UNCLASSIFIED + '"> (unclassified)</label>' : "");
-  buildCheckboxDropdown(containerId, filterKey, allLabel, optionsHtml);
-}
-
 function classifierMatch(selected, value) {
   if (!selected || selected.length === 0) return true;
   const isNull = (value == null || value === "");
   return selected.some(sel => sel === UNCLASSIFIED ? isNull : sel === value);
 }
 
-// Row matches if ANY selected bucket's test() covers its effective age.
-function daysOldMatch(selected, r) {
-  if (!selected || selected.length === 0) return true;
-  const age = effectiveAge(r);
-  const n = age ? age.days : null;
-  return selected.some(v => {
-    if (v === UNCLASSIFIED) return n == null;
-    if (n == null) return false;
-    const opt = DAYS_OLD_OPTIONS.find(o => o.value === v);
-    return opt ? opt.test(n) : false;
-  });
-}
-
 function applyFilters() {
   const f = state.filters;
   const q = f.search.trim().toLowerCase();
   return state.rows.filter(r => {
+    // Status is fixed to New/New* for this page, not a user-adjustable filter.
+    if (r.post_status !== "New" && r.post_status !== "New*") return false;
     if (f.company && r.watchlist_company !== f.company) return false;
     if (!classifierMatch(f.discipline, r.discipline)) return false;
     if (!classifierMatch(f.role, r.role_keyword)) return false;
     if (!classifierMatch(f.level, r.level)) return false;
-    if (!daysOldMatch(f.daysOld, r)) return false;
-    if (!classifierMatch(f.postStatus, r.post_status)) return false;
     if (f.newCompany && r.is_new_company && r.post_status === "New*") return false;
     if (f.wa || f.remote) {
       const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_wa);
@@ -516,13 +482,13 @@ function wireControls() {
   document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("newCoChk").onchange = (e) => { state.filters.newCompany = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("clearBtn").onclick = () => {
-    state.filters = { company: "", wa: false, remote: false, newCompany: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [] };
+    state.filters = defaultFilters();
     state.page = 1;
     search.value = ""; sel.value = "";
-    document.getElementById("waChk").checked = false;
-    document.getElementById("remChk").checked = false;
-    document.getElementById("newCoChk").checked = false;
-    ["disciplineDD", "roleDD", "levelDD", "daysOldDD", "postStatusDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
+    document.getElementById("waChk").checked = true;
+    document.getElementById("remChk").checked = true;
+    document.getElementById("newCoChk").checked = true;
+    ["disciplineDD", "roleDD", "levelDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
     renderTable();
   };
   // close any open dropdown when clicking elsewhere
