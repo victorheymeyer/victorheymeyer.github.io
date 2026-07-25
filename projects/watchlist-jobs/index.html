@@ -26,7 +26,6 @@
       <div class="msdd" id="levelDD"></div>
       <label class="chk"><input type="checkbox" id="waChk" checked> WA Jobs</label>
       <label class="chk"><input type="checkbox" id="remChk" checked> Remote-WA Jobs</label>
-      <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" id="newCoChk" checked> Exclude new companies</label>
       <button class="clearbtn" id="clearBtn">Clear</button>
     </div>
     <div id="count" class="hint"></div>
@@ -72,7 +71,7 @@ const UNCLASSIFIED = "__unclassified__";
 // Default filter view for this page: new (or new-because-new-company) roles,
 // with genuinely new companies excluded, restricted to WA/remote-WA jobs.
 function defaultFilters() {
-  return { company: "", wa: true, remote: true, newCompany: true, search: "", discipline: [], role: [], level: [] };
+  return { company: "", wa: true, remote: true, search: "", discipline: [], role: [], level: [] };
 }
 
 const state = {
@@ -340,7 +339,8 @@ function applyFilters() {
     if (!classifierMatch(f.discipline, r.discipline)) return false;
     if (!classifierMatch(f.role, r.role_keyword)) return false;
     if (!classifierMatch(f.level, r.level)) return false;
-    if (f.newCompany && r.is_new_company && r.post_status === "New*") return false;
+    // Exclude jobs that only look new because their company was just added to the watchlist.
+    if (r.is_new_company && r.post_status === "New*") return false;
     if (f.wa || f.remote) {
       const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_wa);
       if (!ok) return false;
@@ -480,14 +480,12 @@ function wireControls() {
   sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); };
   document.getElementById("waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
-  document.getElementById("newCoChk").onchange = (e) => { state.filters.newCompany = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("clearBtn").onclick = () => {
     state.filters = defaultFilters();
     state.page = 1;
     search.value = ""; sel.value = "";
     document.getElementById("waChk").checked = true;
     document.getElementById("remChk").checked = true;
-    document.getElementById("newCoChk").checked = true;
     ["disciplineDD", "roleDD", "levelDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
     renderTable();
   };
