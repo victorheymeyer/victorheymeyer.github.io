@@ -76,7 +76,10 @@ def description_fingerprint(value):
     return text or None
 # -----------------------------------------------------------------------------
 
-# --- Discipline classification (v5 - inside Title_Role_Rules_v7) -----------------------------------
+# --- Discipline classification (v6 - inside Title_Role_Rules_v7) -----------------------------------
+# V6: Split Project/Program Management into separate Program Management and
+#     Project Management disciplines (mirrors the Program Manager / Project
+#     Manager role split in ROLE_RULES).
 # V5: Added Communications and removed some of the Marketing rules into Comms
 # V4: Below
 # Maps a job title to one of 25 disciplines (craft/training, not org unit).
@@ -92,7 +95,8 @@ _DISCIPLINE_RULES = [
     ("Research", r"\b(research scientist|research engineer|researcher|applied scientist|research fellow|research intern|research lead|research manager|economist|ml researcher|ai researcher|machine learning researcher|postdoc|quantitative researcher|psychologist|fellows program|frontier agents intern)\b", None),
     ("Data & Analytics", r"\b(data analyst|business intelligence|bi analyst|analytics|data scientist|data science|business analyst|product analyst|digital analyst|insights|competitive intelligence|market intelligence|data quality)\b", None),
     ("Product Management", r"\b(product manager|product management|group product manager|director of product|product director|head of product|product owner|product lead)\b", None),
-    ("Project/Program Management", r"\b(project manager|program manager|technical program|tpm|project lead|delivery manager|scrum master|scheduler|program director|special projects manager|project planner)\b", None),
+    ("Program Management", r"\b(program manager|technical program|tpm|program director)\b", None),
+    ("Project Management", r"\b(project manager|project lead|delivery manager|scrum master|scheduler|special projects manager|project planner)\b", None),
     ("Design", r"\b(designer|design|\bux\b|\bui\b|user experience|creative director|creative lead|art director|motion graphics|graphic)\b", None),
     ("IT / Infrastructure", r"\b(data center|datacenter|it support|it network|it systems|systems administrator|network administrator|network infrastructure|help desk|helpdesk|it helpdesk|technology partner|desktop support|site reliability lead)\b", None),
     ("Security", r"\b(security analyst|security operator|security officer|soc analyst|threat|cyber|cybersecurity|information security|infosec|insider risk|physical security|security risk|incident response|security operations|comsec|security controls|security hardware|identity & access|iam\b)\b", None),
