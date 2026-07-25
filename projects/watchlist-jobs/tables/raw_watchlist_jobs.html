@@ -387,7 +387,7 @@ function render() {
     const days = Math.round((new Date(maxd) - new Date(mind)) / 86400000) + 1;
     document.getElementById("recencyHint").innerHTML =
       "Recency window (based on <code>snapshot_date</code>): " + fmtDate(mind) + " to " + fmtDate(maxd) + " (" + days + " days). " +
-      "The loader prunes snapshots older than 14 days, so this window is expected to hover around 14 days rather than grow indefinitely.";
+      "The loader prunes snapshots older than 10 days, so this window is expected to hover around 10 days rather than grow indefinitely.";
   }
 
   document.getElementById("breadthHint").innerHTML =
