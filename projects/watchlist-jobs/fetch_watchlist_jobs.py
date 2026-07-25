@@ -309,10 +309,10 @@ def normalize_title_for_level(title):
 
 
 _LEVEL_RULES = [
+    ("Chief of Staff",    [r"\b(chief\s+of\s+staff|cos)\b"]),
     ("CXO",              [r"\bchief\b", r"\bofficer\b"]),
     ("VP",                [r"\b(vice\s+president|vp)\b"]),
     ("GM",                [r"\b(general\s+manager|gm)\b"]),
-    ("Chief of Staff",    [r"\b(chief\s+of\s+staff|cos)\b"]),
     ("Supervisor",        [r"\bsupervisor\b"]),
     ("Superintendent",    [r"\bsuperintendent\b"]),
     ("Senior Director",   [r"\bsenior\b", r"\bdirector\b"]),
