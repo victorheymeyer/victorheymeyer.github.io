@@ -40,12 +40,12 @@
         <div class="criteria-opt-list cols-3" id="disciplineList"></div>
       </div>
       <div class="criteria-group">
-        <div class="criteria-group-label">Role</div>
-        <div class="criteria-opt-list" id="roleList"></div>
-      </div>
-      <div class="criteria-group">
         <div class="criteria-group-label">Level</div>
         <div class="criteria-opt-list cols-3" id="levelList"></div>
+      </div>
+      <div class="criteria-group">
+        <div class="criteria-group-label">Role</div>
+        <div class="criteria-opt-list cols-3-grouped" id="roleList"></div>
       </div>
     </div>
 
@@ -127,6 +127,29 @@ function orderByFixedList(values, order) {
   return known.concat(unknown);
 }
 
+// Themed groups shown as sub-headed sections within the Role column-flow
+// (bucket order is alphabetical by bucket name; values within a bucket keep
+// the order they were given in) rather than one flat alphabetical list,
+// since the raw list mixes primary titles and "(other)" catch-alls in a way
+// that's hard to scan.
+const ROLE_BUCKETS = [
+  { label: "Customer Success & Support", values: ["Customer Success", "Customer Support", "Delivery Success", "Engagement", "Support (Other)"] },
+  { label: "Data & Analytics", values: ["Data Analyst/Analysis", "Data Scientist/Science", "Analysis (other)", "Analyst (Other)", "Analytics (Other)"] },
+  { label: "Design & Creative", values: ["Designer", "Design (Other)"] },
+  { label: "Engineering & Technical", values: ["Architect", "Developer", "Engineer", "Engineering", "Engineering Director", "Engineering Manager", "Solutions Architect", "Tech (other)", "Technical"] },
+  { label: "Executive & Administrative", values: ["Administrator", "Chief of Staff", "executive assistant"] },
+  { label: "Finance & Accounting", values: ["Accountant/Accounting", "Finance & Strategy", "Finance (Other)", "finance manager", "Financial Planning", "Financing", "Strategic Finance", "Tax", "Treasury"] },
+  { label: "Legal, Risk & Compliance", values: ["Audit", "Contract", "counsel", "Fraud", "Legal & Counsel"] },
+  { label: "Marketing & Communications", values: ["communications lead", "communications manager", "communications reporter", "communications specialist", "director of communications", "head of communications", "Market", "Marketing", "Marketing Manager", "Public Relations", "Communications (other)"] },
+  { label: "Operations & Supply Chain", values: ["Incident", "Operations (other)", "operations analyst", "operations associate", "operations manager", "Production", "Sourcing", "sourcing manager", "Supply Chain", "supply manager"] },
+  { label: "People & HR", values: ["People", "Recruiter", "Trainer"] },
+  { label: "Product & Program Management", values: ["Product Management", "Product Manager", "Product Strategy", "Program (Other)", "Program Manager", "Project Manager"] },
+  { label: "Research & Science", values: ["Economist", "Research", "Researcher", "Scientist"] },
+  { label: "Sales & Account Management", values: ["Account Executive", "Account Lead/Director", "Account Manager", "Alliance", "Biz Dev", "Enablement", "Partnerships", "Relationship Manager", "Sales Dev", "sales manager", "sales specialist", "Sales (other)", "GTM (other)"] },
+  { label: "Skilled Trades & Field Operations", values: ["Cook", "Driver", "Inspector", "Machinist", "Mechanic", "Technician", "Welder"] },
+  { label: "Strategy & Consulting", values: ["Business Planner/Planning", "Consultant", "Corp Dev", "Strategist", "Strategy", "Strategy & Operations", "Planning (other)"] }
+];
+
 // In-memory form state only - mutated by the controls below, written to a
 // store solely by Save Criteria's click handler.
 let formState = Criteria.defaultFilters();
@@ -166,6 +189,20 @@ function renderSavedSummary() {
   el.innerHTML = items.length ? items.map(i => "<li>" + i + "</li>").join("") : "<li>None</li>";
 }
 
+// Shared by renderChecklist and renderRoleChecklist: syncs checkbox state
+// from formState[key] and writes back to it on change.
+function wireChecklistCheckboxes(el, key) {
+  el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.checked = formState[key].includes(cb.value);
+    cb.onchange = () => {
+      const arr = formState[key];
+      const i = arr.indexOf(cb.value);
+      if (cb.checked && i < 0) arr.push(cb.value);
+      if (!cb.checked && i >= 0) arr.splice(i, 1);
+    };
+  });
+}
+
 function renderChecklist(containerId, key, values, hasNull, columns) {
   const el = document.getElementById(containerId);
   let items = values.slice();
@@ -178,20 +215,35 @@ function renderChecklist(containerId, key, values, hasNull, columns) {
       : '<label class="criteria-opt"><input type="checkbox" value="' + esc(v) + '"> ' + esc(v) + '</label>'
   ).join("");
 
-  el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-    cb.checked = formState[key].includes(cb.value);
-    cb.onchange = () => {
-      const arr = formState[key];
-      const i = arr.indexOf(cb.value);
-      if (cb.checked && i < 0) arr.push(cb.value);
-      if (!cb.checked && i >= 0) arr.splice(i, 1);
-    };
+  wireChecklistCheckboxes(el, key);
+}
+
+// Renders Role as sub-headed groups (see ROLE_BUCKETS) flowing into CSS
+// columns, instead of one flat grid like Discipline/Level - only values
+// actually present in the data are shown, in bucket order.
+function renderRoleChecklist(values, hasNull) {
+  const el = document.getElementById("roleList");
+  const present = new Set(values);
+  let html = "";
+  ROLE_BUCKETS.forEach(bucket => {
+    const bucketValues = bucket.values.filter(v => present.has(v));
+    if (!bucketValues.length) return;
+    html += '<div class="criteria-role-group">' +
+      '<div class="criteria-role-group-label">' + esc(bucket.label) + '</div>' +
+      bucketValues.map(v => '<label class="criteria-opt"><input type="checkbox" value="' + esc(v) + '"> ' + esc(v) + '</label>').join("") +
+      '</div>';
   });
+  if (hasNull) {
+    html += '<div class="criteria-role-group"><label class="criteria-opt"><input type="checkbox" value="' + Criteria.UNCLASSIFIED + '"> (unclassified)</label></div>';
+  }
+  el.innerHTML = html;
+
+  wireChecklistCheckboxes(el, "role");
 }
 
 function renderForm(classifiers) {
   renderChecklist("disciplineList", "discipline", classifiers.discipline.values, classifiers.discipline.hasNull, 3);
-  renderChecklist("roleList", "role", classifiers.role.values, classifiers.role.hasNull);
+  renderRoleChecklist(classifiers.role.values, classifiers.role.hasNull);
   renderChecklist("levelList", "level", classifiers.level.values, classifiers.level.hasNull, 3);
 
   const waChk = document.getElementById("waChk");

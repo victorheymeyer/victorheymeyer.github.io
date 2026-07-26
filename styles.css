@@ -244,6 +244,10 @@ td a:hover { text-decoration: underline; }
 .criteria-group-label { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-8); }
 .criteria-opt-list { display: flex; flex-wrap: wrap; gap: var(--sp-4) var(--sp-16); }
 .criteria-opt-list.cols-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4) var(--sp-16); }
+.criteria-opt-list.cols-3-grouped { display: block; columns: 3; column-gap: var(--sp-16); }
+.criteria-opt-list.cols-3-grouped .criteria-role-group { break-inside: avoid; margin-bottom: var(--sp-12); }
+.criteria-opt-list.cols-3-grouped .criteria-role-group-label { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-4); }
+.criteria-opt-list.cols-3-grouped .criteria-opt { display: flex; }
 .criteria-opt { display: inline-flex; align-items: center; gap: var(--sp-6); color: var(--text); font-size: var(--fs-sm); cursor: pointer; padding: var(--sp-3) 0; }
 .criteria-actions { display: flex; align-items: center; gap: var(--sp-10); }
 
