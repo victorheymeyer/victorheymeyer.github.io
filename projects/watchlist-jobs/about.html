@@ -14,25 +14,39 @@
   <div class="sub">What this tool does and how it works</div>
 
   <div class="panel">
-    <h2>What it is</h2>
-    <p class="hint">Watchlist Jobs tracks new job postings at a curated list of companies and surfaces the ones that
-      are based in Washington State or open to remote-WA candidates. Each day's snapshot is compared against the
-      prior one so only genuinely new roles show up as "New."</p>
+    <h2>About</h2>
+    <p class="hint">Watchlist Jobs tracks job postings from a curated list of Tech employers plus some other
+      Seattle based firms. More companies will be added over time. Some notable companies like Amazon, Apple,
+      and Meta have not yet been included.</p>
   </div>
 
   <div class="panel">
-    <h2>How it works</h2>
-    <p class="hint">A daily pipeline pulls open roles from each company's applicant tracking system (Greenhouse,
-      Lever, Workday, and others), classifies them by discipline, role, and level, and flags whether the location
-      looks like WA or remote-WA. The results are stored in Supabase and queried live by this site.</p>
+    <h2>Definition of "New"</h2>
+    <p class="hint">New is defined as the day after it's been posted (or first seen).</p>
+  </div>
+
+  <div class="panel">
+    <h2>Source of jobs</h2>
+    <p class="hint">We pull directly from the source (the employer's ATS) unless indicated for one-off
+      companies.</p>
   </div>
 
   <div class="panel">
     <h2>Pages</h2>
     <p class="hint"><strong>My Jobs</strong> shows new postings filtered to your own saved criteria.
-      <strong>My Criteria</strong> is where you set those filters. <strong>Slug Search</strong> looks up a specific
-      company's ATS listings. <strong>Global</strong> shows new postings across the whole watchlist, unfiltered.
-      <strong>Stats</strong> covers snapshot and table-level statistics for the underlying data.</p>
+      <strong>My Criteria</strong> is where you set those filters. They are saved on your device or in our DB
+      if signed in. <strong>Slug Search</strong> looks up a specific company's ATS listings. Use this tool to
+      find ATS and Slugs for companies. Not all companies in this table are being pulled. <strong>Global</strong>
+      shows new postings across the whole watchlist, unfiltered. <strong>Stats</strong> covers snapshot and
+      table-level statistics for the underlying data.</p>
+  </div>
+
+  <div class="panel">
+    <h2>GitHub</h2>
+    <p class="hint">
+      <a href="https://github.com/victorheymeyer/" target="_blank" rel="noopener noreferrer">github.com/victorheymeyer</a><br>
+      <a href="https://github.com/victorheymeyer/victorheymeyer.github.io/tree/main/projects/watchlist-jobs" target="_blank" rel="noopener noreferrer">victorheymeyer.github.io/projects/watchlist-jobs</a>
+    </p>
   </div>
 
   <footer class="site-footer">
