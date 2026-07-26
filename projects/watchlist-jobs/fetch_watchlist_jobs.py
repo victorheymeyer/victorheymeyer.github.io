@@ -366,7 +366,9 @@ FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title"
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
             "url", "apply_url", "last_seen", "fetched_at", "discipline", "role_keyword",
             "level", "raw", "description_change_count",
-            "description_last_change_chars", "description_plain_len", "requisition_id"]
+            "description_last_change_chars", "description_plain_len", "requisition_id",
+            "ats_type", "is_remote", "team", "employment_type",
+            "salary_min", "salary_max", "salary_currency", "posted_at"]
 
 # description_last_change is not tracked here: it duplicated the existing
 # current_version_first_seen column (verified byte-identical), which
