@@ -43,7 +43,7 @@
       </div>
       <div class="criteria-group">
         <div class="criteria-group-label">Level</div>
-        <div class="criteria-opt-list" id="levelList"></div>
+        <div class="criteria-opt-list cols-3" id="levelList"></div>
       </div>
     </div>
 
@@ -99,14 +99,30 @@ function distinctValues(rows, field) {
   return { values, hasNull };
 }
 
+// Seniority order (roughly high-to-low) rather than alphabetical, since
+// that's what's useful when scanning the Level filter.
+const LEVEL_ORDER = [
+  "CXO", "VP", "GM", "Senior Director", "Head of", "Director",
+  "Senior Principal", "Principal", "Staff", "Chief of Staff", "Lead",
+  "Senior Manager", "Manager", "Superintendent", "Supervisor",
+  "Senior Associate", "Associate", "Senior Analyst", "Analyst", "Senior",
+  "Specialist", "II", "I", "Coordinator", "Assistant", "Rotation"
+];
+
+function orderByFixedList(values, order) {
+  const known = order.filter(v => values.includes(v));
+  const unknown = values.filter(v => !order.includes(v));
+  return known.concat(unknown);
+}
+
 // In-memory form state only - mutated by the controls below, written to a
 // store solely by Save Criteria's click handler.
 let formState = Criteria.defaultFilters();
 
-// Reorders a top-to-bottom, alphabetized list so that laying it out in DOM
-// order (left-to-right, wrapping every `columns` items - what CSS grid's
-// default row auto-flow does) reads alphabetically down each column first,
-// then across, instead of left-to-right across each row first.
+// Reorders a top-to-bottom list so that laying it out in DOM order
+// (left-to-right, wrapping every `columns` items - what CSS grid's default
+// row auto-flow does) reads down each column first in the given order,
+// instead of left-to-right across each row first.
 function toColumnMajorOrder(items, columns) {
   const rows = Math.ceil(items.length / columns);
   const ordered = [];
@@ -145,7 +161,7 @@ function renderChecklist(containerId, key, values, hasNull, columns) {
 function renderForm(classifiers) {
   renderChecklist("disciplineList", "discipline", classifiers.discipline.values, classifiers.discipline.hasNull, 3);
   renderChecklist("roleList", "role", classifiers.role.values, classifiers.role.hasNull);
-  renderChecklist("levelList", "level", classifiers.level.values, classifiers.level.hasNull);
+  renderChecklist("levelList", "level", classifiers.level.values, classifiers.level.hasNull, 3);
 
   const waChk = document.getElementById("waChk");
   const remChk = document.getElementById("remChk");
@@ -175,6 +191,7 @@ async function main() {
       role: distinctValues(rows, "role_keyword"),
       level: distinctValues(rows, "level")
     };
+    classifiers.level.values = orderByFixedList(classifiers.level.values, LEVEL_ORDER);
 
     const loaded = Criteria.state.loadedFilters;
     formState.discipline = loaded.discipline.slice();
