@@ -76,6 +76,69 @@ def description_fingerprint(value):
     return text or None
 # -----------------------------------------------------------------------------
 
+# --- Location augmentation (fold secondary locations into Job.location) ------
+# refresh_location_flags() (the SQL classifier) only ever inspects the single
+# `location` column, but several ATSes report a multi-location posting as one
+# primary Job.location string plus the alternates tucked away in Job.raw:
+#   - Lever:       raw["categories"]["allLocations"] (list of strings)
+#   - Ashby:       raw["secondary_locations"] (list of strings)
+#   - Greenhouse:  raw["offices"] (list of office-name strings)
+#   - Workable:    raw["locations"] (list of {city, region, country} dicts) --
+#     the scraper's own location field only ever takes locations[0]
+# A posting whose only Seattle/remote-WA location is one of these alternates
+# was invisible to the classifier and silently dropped, e.g. a Wealthfront
+# Lever posting listing "Palo Alto, CA (Open to US-based Remote)" primary
+# with "Seattle, WA" only in allLocations. Workday already resolves this
+# itself (_format_locations) and SmartRecruiters doesn't carry a secondary
+# list, so both are left alone here.
+def _location_alternates(raw):
+    if not isinstance(raw, dict):
+        return []
+    alternates = []
+
+    categories = raw.get("categories")
+    if isinstance(categories, dict):
+        for loc in categories.get("allLocations") or []:
+            if isinstance(loc, str) and loc.strip():
+                alternates.append(loc.strip())
+
+    for loc in raw.get("secondary_locations") or []:
+        if isinstance(loc, str) and loc.strip():
+            alternates.append(loc.strip())
+
+    for office in raw.get("offices") or []:
+        if isinstance(office, str) and office.strip():
+            alternates.append(office.strip())
+
+    for loc in raw.get("locations") or []:
+        if isinstance(loc, dict):
+            parts = [loc.get("city"), loc.get("region"), loc.get("country")]
+            joined = ", ".join(p for p in parts if isinstance(p, str) and p.strip())
+            if joined:
+                alternates.append(joined)
+        elif isinstance(loc, str) and loc.strip():
+            alternates.append(loc.strip())
+
+    return alternates
+
+
+def augment_location(location, raw):
+    """Append any ATS-captured alternate locations not already present in
+    `location`, de-duplicating case-insensitively. Joined with "; " so the
+    classifier's existing ";"/"|" segment-splitting logic keeps working."""
+    alternates = _location_alternates(raw)
+    if not alternates:
+        return location
+    seen = set()
+    parts = []
+    for loc in ([location] if location else []) + alternates:
+        key = loc.strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            parts.append(loc)
+    return "; ".join(parts) if parts else location
+# -----------------------------------------------------------------------------
+
 # --- Discipline classification (v6 - inside Title_Role_Rules_v7) -----------------------------------
 # V6: Split Project/Program Management into separate Program Management and
 #     Project Management disciplines (mirrors the Program Manager / Project
@@ -479,6 +542,7 @@ def main():
                 d["watchlist_company"] = company
                 d["ats_id"] = str(d.get("ats_id"))
                 d["last_seen"] = snapshot_date
+                d["location"] = augment_location(d.get("location"), d.get("raw"))
 
                 # Hash a normalized plain-text projection of the description
                 # (see description_fingerprint above), not the raw field --
