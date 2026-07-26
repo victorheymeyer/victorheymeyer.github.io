@@ -10,8 +10,7 @@
     { label: "My Jobs", href: "/projects/watchlist-jobs/my-jobs.html" },
     { label: "My Criteria", href: "/projects/watchlist-jobs/my-criteria.html" },
     { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },
-    { label: "Stats", href: "/projects/watchlist-jobs/stats/index.html" },
-    { label: "Tables", href: "/projects/watchlist-jobs/tables/index.html" }
+    { label: "Stats", href: "/projects/watchlist-jobs/stats/index.html" }
   ];
 
   // Treat "/x", "/x/", and "/x/index.html" as the same path for active-link matching.

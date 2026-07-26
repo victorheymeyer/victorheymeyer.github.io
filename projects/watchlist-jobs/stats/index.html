@@ -17,6 +17,11 @@
 
   <div id="sections"></div>
 
+  <h2>Table Stats</h2>
+  <div class="sub">Nightly storage and shape monitoring for the watchlist-jobs tables &mdash; rows, size, and column-level breadth, captured once a day rather than computed live.</div>
+
+  <div id="tableSections"></div>
+
   <footer class="site-footer">
     <p>© 2026 Victor Heymeyer | Seattle, WA |<a href="https://www.linkedin.com/in/heymeyer/" target="_blank" rel="noopener noreferrer"> LinkedIn</a> </p>
     <a class="footer-right" href="https://heymeyer.com" target="_blank" rel="noopener noreferrer">heymeyer.com</a>
@@ -87,6 +92,31 @@ const SECTIONS = [
   }
 ];
 
+// One entry per templated table page in ../tables/. Add a new entry when the
+// template is applied to another table; the row renders itself from table_stats.
+const TABLES = [
+  {
+    title: "job_content",
+    href: "../tables/job_content.html",
+    desc: "Per-job dimension table, upserted on (watchlist_company, ats_id). description/raw are retained only for Seattle-relevant postings."
+  },
+  {
+    title: "raw_watchlist_jobs",
+    href: "../tables/raw_watchlist_jobs.html",
+    desc: "Immutable daily snapshot fact table, pruned to 10 days of retention."
+  },
+  {
+    title: "watchlist_companies",
+    href: "../tables/watchlist_companies.html",
+    desc: "Hand-curated list of companies scraped daily; edited directly, not scraped."
+  },
+  {
+    title: "ats_company_directory",
+    href: "../tables/ats_company_directory.html",
+    desc: "Candidate-company directory across ATS platforms, rebuilt in one pass monthly."
+  }
+];
+
 function esc(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -100,6 +130,76 @@ function showError(msg) {
 
 function statCard(label, value) {
   return '<div class="stat-chip"><div class="n">' + Number(value).toLocaleString() + '</div><div class="l">' + esc(label) + '</div></div>';
+}
+
+function statChip(label, value) {
+  return '<div class="stat-chip"><div class="n">' + esc(value) + '</div><div class="l">' + esc(label) + '</div></div>';
+}
+
+function fmtBytes(n) {
+  if (n == null) return "-";
+  const units = ["bytes", "kB", "MB", "GB", "TB"];
+  let v = Number(n), i = 0;
+  while (Math.abs(v) >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(1)) + " " + units[i];
+}
+
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return d;
+  return (dt.getMonth() + 1) + "/" + dt.getDate() + "/" + dt.getFullYear();
+}
+
+async function loadTableStats(tableName) {
+  const { data, error } = await supabaseClient
+    .from("table_stats").select("captured_date,row_count,total_bytes,dead_tuples,captured_at")
+    .eq("table_name", tableName)
+    .order("captured_date", { ascending: false })
+    .limit(2);
+  if (error) throw error;
+  const rows = data || [];
+  if (!rows.length) return [{ label: "Status", value: "No captures yet" }];
+
+  const latest = rows[0];
+  const stats = [
+    { label: "Rows", value: latest.row_count.toLocaleString() },
+    { label: "Dead tuples", value: (latest.dead_tuples || 0).toLocaleString() },
+    { label: "Total size", value: fmtBytes(latest.total_bytes) }
+  ];
+
+  if (rows.length > 1) {
+    const prev = rows[1];
+    const days = Math.max(1, Math.round((new Date(latest.captured_date) - new Date(prev.captured_date)) / 86400000));
+    const perDay = Math.round((latest.row_count - prev.row_count) / days);
+    stats.push({ label: "Rows/day", value: (perDay > 0 ? "+" : "") + perDay.toLocaleString() });
+  }
+
+  stats.push({ label: "Last captured", value: fmtDate(latest.captured_date) });
+  return stats;
+}
+
+async function renderTable(table) {
+  const panel = document.createElement("div");
+  panel.className = "stat-row";
+  panel.innerHTML =
+    '<div class="stat-row-info">' +
+      '<h2><a href="' + esc(table.href) + '">' + esc(table.title) + '</a></h2>' +
+      '<p class="hint">' + esc(table.desc) + '</p>' +
+    '</div>' +
+    '<div class="stat-row-stats stat-loading">Loading stats...</div>';
+  document.getElementById("tableSections").appendChild(panel);
+
+  const statsEl = panel.querySelector(".stat-row-stats");
+  try {
+    const stats = await loadTableStats(table.title);
+    statsEl.classList.remove("stat-loading");
+    statsEl.textContent = "";
+    statsEl.innerHTML = stats.map(s => statChip(s.label, s.value)).join("");
+  } catch (err) {
+    statsEl.textContent = "";
+    showError((err && err.message) ? err.message : String(err));
+  }
 }
 
 async function renderSection(section) {
@@ -126,6 +226,7 @@ async function renderSection(section) {
 }
 
 SECTIONS.forEach(renderSection);
+TABLES.forEach(renderTable);
 </script>
 </body>
 </html>
