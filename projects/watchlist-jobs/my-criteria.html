@@ -19,9 +19,17 @@
     <div class="errBox"></div>
 
     <div class="criteria-form" style="display:none">
-      <div class="criteria-row">
-        <label class="chk"><input type="checkbox" id="waChk"> WA Jobs</label>
-        <label class="chk"><input type="checkbox" id="remChk"> Remote-WA Jobs</label>
+      <div class="criteria-header">
+        <div class="criteria-row">
+          <label class="chk"><input type="checkbox" id="waChk"> WA Jobs</label>
+          <label class="chk"><input type="checkbox" id="remChk"> Remote-WA Jobs</label>
+        </div>
+
+        <div class="criteria-actions">
+          <button type="button" class="clearbtn" id="clearBtn">Clear</button>
+          <button type="button" class="clearbtn" id="saveBtn">Save Criteria</button>
+          <span class="hint" id="saveMsg"></span>
+        </div>
       </div>
 
       <div class="criteria-group">
@@ -35,12 +43,6 @@
       <div class="criteria-group">
         <div class="criteria-group-label">Level</div>
         <div class="criteria-opt-list" id="levelList"></div>
-      </div>
-
-      <div class="criteria-actions">
-        <button type="button" class="clearbtn" id="clearBtn">Clear</button>
-        <button type="button" class="clearbtn" id="saveBtn">Save Criteria</button>
-        <span class="hint" id="saveMsg"></span>
       </div>
     </div>
 

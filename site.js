@@ -10,7 +10,9 @@
     { divider: true },
     { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },
     { label: "Global", href: "/projects/watchlist-jobs/global.html" },
-    { label: "Stats", href: "/projects/watchlist-jobs/stats/index.html" }
+    { label: "Stats", href: "/projects/watchlist-jobs/stats/index.html" },
+    { divider: true },
+    { label: "About", href: "/projects/watchlist-jobs/about.html" }
   ];
 
   // Treat "/x", "/x/", and "/x/index.html" as the same path for active-link matching.
