@@ -380,7 +380,7 @@ function renderTable() {
     tr.className = "jobrow";
     tr.innerHTML =
       '<td class="company">' + JobDetail.esc(r.display_name || r.watchlist_company) + '</td>' +
-      '<td title="' + JobDetail.esc(r.title || "") + '">' + JobDetail.esc(r.title || "(no title)") + badges + '</td>' +
+      '<td class="jobtitle" title="' + JobDetail.esc(r.title || "") + '">' + JobDetail.esc(r.title || "(no title)") + badges + '</td>' +
       '<td>' + (link ? '<a href="' + JobDetail.esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
     tr.onclick = () => toggleRow(key, r, tr);
     tbody.appendChild(tr);

@@ -136,6 +136,7 @@ th, td { text-align: left; padding: var(--sp-9) var(--sp-10); border-bottom: 1px
 th { color: var(--muted); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
 tr.jobrow { cursor: pointer; }
 tr.jobrow td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+tr.jobrow td.jobtitle { white-space: normal; overflow: visible; text-overflow: clip; }
 tr.jobrow:hover td { background: var(--panel-2); }
 .company { color: var(--accent); font-weight: 600; }
 .loc { color: var(--muted); }
