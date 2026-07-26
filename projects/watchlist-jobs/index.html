@@ -25,7 +25,6 @@
       <div class="msdd" id="levelDD"></div>
       <label class="chk"><input type="checkbox" id="waChk" checked> WA Jobs</label>
       <label class="chk"><input type="checkbox" id="remChk" checked> Remote-WA Jobs</label>
-      <button class="clearbtn" id="clearBtn">Clear</button>
     </div>
     <div id="count" class="hint"></div>
     <table>
@@ -474,15 +473,6 @@ function wireControls() {
   sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); };
   document.getElementById("waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
-  document.getElementById("clearBtn").onclick = () => {
-    state.filters = defaultFilters();
-    state.page = 1;
-    search.value = ""; sel.value = "";
-    document.getElementById("waChk").checked = true;
-    document.getElementById("remChk").checked = true;
-    ["disciplineDD", "roleDD", "levelDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
-    renderTable();
-  };
   // close any open dropdown when clicking elsewhere
   document.addEventListener("click", () => {
     document.querySelectorAll(".msdd-panel").forEach(p => { p.hidden = true; });
