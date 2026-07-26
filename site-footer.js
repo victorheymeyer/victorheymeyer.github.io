@@ -12,6 +12,13 @@
   linkedin.rel = "noopener noreferrer";
   linkedin.textContent = "LinkedIn";
   p.appendChild(linkedin);
+  p.appendChild(document.createTextNode(" | "));
+  const github = document.createElement("a");
+  github.href = "https://github.com/victorheymeyer";
+  github.target = "_blank";
+  github.rel = "noopener noreferrer";
+  github.textContent = "GitHub";
+  p.appendChild(github);
   p.appendChild(document.createTextNode(" "));
   footer.appendChild(p);
 
