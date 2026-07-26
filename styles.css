@@ -63,6 +63,7 @@ a { color: var(--accent); }
 .wrap { max-width: 1100px; margin: 0 auto; padding: var(--sp-24) var(--sp-18) var(--sp-60); }
 h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
 .sub { color: var(--muted); font-size: var(--fs-sm); margin-bottom: var(--sp-20); }
+.saved-criteria-list { margin: var(--sp-4) 0 0 var(--sp-20); padding: 0; }
 
 /* ---- Shared site nav ---- */
 .site-nav { background: var(--panel); border-bottom: 1px solid var(--border); }

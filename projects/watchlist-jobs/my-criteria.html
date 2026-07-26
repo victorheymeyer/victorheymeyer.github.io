@@ -13,6 +13,8 @@
 <div class="wrap">
   <h1>My Criteria</h1>
   <p class="sub">Criteria is saved on your device unless you Sign In</p>
+  <p class="sub"><strong>Rules:</strong> Within a group, any match counts; across groups, all must match. See detailed logic at the bottom of the page.</p>
+  <div class="sub"><strong>Saved criteria:</strong><ul class="saved-criteria-list" id="savedCriteriaList"></ul></div>
 
   <div id="seedBanner" style="display:none"></div>
 
@@ -48,6 +50,16 @@
     </div>
 
     <div class="loading" id="loadingMsg">Loading criteria...</div>
+  </div>
+
+  <div class="panel">
+    <h2>Detailed Logic</h2>
+    <ul class="hint">
+      <li>Within a category (Discipline, Role, Level, Post Status, Days Old): checking multiple boxes is OR — matches any of them.</li>
+      <li>Across categories, plus Company, WA, Remote-WA, and Search: it's AND — a job must satisfy every filter you've set.</li>
+      <li>WA vs Remote-WA is the one exception: if you check either (or both), a job matches if it satisfies either one (it's an OR between those two, then ANDed with everything else).</li>
+      <li>Search is a plain substring match across title/company/location/department.</li>
+    </ul>
   </div>
 
   <div id="siteFooter"></div>
@@ -135,6 +147,25 @@ function toColumnMajorOrder(items, columns) {
   return ordered;
 }
 
+function displayValue(v) {
+  return v === Criteria.UNCLASSIFIED ? "(unclassified)" : v;
+}
+
+// Summary of what's actually persisted (device localStorage or the account
+// row) rather than the in-page, not-yet-saved edits - refreshed on load and
+// after a successful Save.
+function renderSavedSummary() {
+  const el = document.getElementById("savedCriteriaList");
+  const saved = Criteria.state.loadedFilters;
+  const items = [];
+  if (saved.wa) items.push("WA Jobs");
+  if (saved.remote) items.push("Remote-WA Jobs");
+  if (saved.discipline.length) items.push("Discipline: " + saved.discipline.map(v => esc(displayValue(v))).join(", "));
+  if (saved.role.length) items.push("Role: " + saved.role.map(v => esc(displayValue(v))).join(", "));
+  if (saved.level.length) items.push("Level: " + saved.level.map(v => esc(displayValue(v))).join(", "));
+  el.innerHTML = items.length ? items.map(i => "<li>" + i + "</li>").join("") : "<li>None</li>";
+}
+
 function renderChecklist(containerId, key, values, hasNull, columns) {
   const el = document.getElementById(containerId);
   let items = values.slice();
@@ -169,6 +200,8 @@ function renderForm(classifiers) {
   remChk.checked = formState.remote;
   waChk.onchange = () => { formState.wa = waChk.checked; };
   remChk.onchange = () => { formState.remote = remChk.checked; };
+
+  renderSavedSummary();
 }
 
 async function main() {
@@ -224,6 +257,7 @@ async function main() {
           remote: formState.remote
         });
         await Criteria.saveCriteria(merged);
+        renderSavedSummary();
         saveMsg.textContent = "Saved.";
       } catch (err) {
         saveMsg.innerHTML = '<div class="err">Could not save: ' + esc((err && err.message) ? err.message : String(err)) + '</div>';
