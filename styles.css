@@ -244,6 +244,7 @@ td a:hover { text-decoration: underline; }
 .criteria-group { margin-bottom: var(--sp-18); }
 .criteria-group-label { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--sp-8); }
 .criteria-opt-list { display: flex; flex-wrap: wrap; gap: var(--sp-4) var(--sp-16); }
+.criteria-opt-list.cols-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4) var(--sp-16); }
 .criteria-opt { display: inline-flex; align-items: center; gap: var(--sp-6); color: var(--text); font-size: var(--fs-sm); cursor: pointer; padding: var(--sp-3) 0; }
 .criteria-actions { display: flex; align-items: center; gap: var(--sp-10); }
 

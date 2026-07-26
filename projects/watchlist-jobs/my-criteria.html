@@ -34,7 +34,7 @@
 
       <div class="criteria-group">
         <div class="criteria-group-label">Discipline</div>
-        <div class="criteria-opt-list" id="disciplineList"></div>
+        <div class="criteria-opt-list cols-3" id="disciplineList"></div>
       </div>
       <div class="criteria-group">
         <div class="criteria-group-label">Role</div>
@@ -105,11 +105,33 @@ function distinctValues(rows, field) {
 // store solely by Save Criteria's click handler.
 let formState = Criteria.defaultFilters();
 
-function renderChecklist(containerId, key, values, hasNull) {
+// Reorders a top-to-bottom, alphabetized list so that laying it out in DOM
+// order (left-to-right, wrapping every `columns` items - what CSS grid's
+// default row auto-flow does) reads alphabetically down each column first,
+// then across, instead of left-to-right across each row first.
+function toColumnMajorOrder(items, columns) {
+  const rows = Math.ceil(items.length / columns);
+  const ordered = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < columns; c++) {
+      const idx = c * rows + r;
+      if (idx < items.length) ordered.push(items[idx]);
+    }
+  }
+  return ordered;
+}
+
+function renderChecklist(containerId, key, values, hasNull, columns) {
   const el = document.getElementById(containerId);
-  el.innerHTML = values.map(v =>
-    '<label class="criteria-opt"><input type="checkbox" value="' + esc(v) + '"> ' + esc(v) + '</label>'
-  ).join("") + (hasNull ? '<label class="criteria-opt"><input type="checkbox" value="' + Criteria.UNCLASSIFIED + '"> (unclassified)</label>' : "");
+  let items = values.slice();
+  if (hasNull) items.push(Criteria.UNCLASSIFIED);
+  if (columns > 1) items = toColumnMajorOrder(items, columns);
+
+  el.innerHTML = items.map(v =>
+    v === Criteria.UNCLASSIFIED
+      ? '<label class="criteria-opt"><input type="checkbox" value="' + Criteria.UNCLASSIFIED + '"> (unclassified)</label>'
+      : '<label class="criteria-opt"><input type="checkbox" value="' + esc(v) + '"> ' + esc(v) + '</label>'
+  ).join("");
 
   el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
     cb.checked = formState[key].includes(cb.value);
@@ -123,7 +145,7 @@ function renderChecklist(containerId, key, values, hasNull) {
 }
 
 function renderForm(classifiers) {
-  renderChecklist("disciplineList", "discipline", classifiers.discipline.values, classifiers.discipline.hasNull);
+  renderChecklist("disciplineList", "discipline", classifiers.discipline.values, classifiers.discipline.hasNull, 3);
   renderChecklist("roleList", "role", classifiers.role.values, classifiers.role.hasNull);
   renderChecklist("levelList", "level", classifiers.level.values, classifiers.level.hasNull);
 
