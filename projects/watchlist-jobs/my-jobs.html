@@ -163,8 +163,13 @@ let hasSavedCriteria = false;
 
 function renderCriteriaBar() {
   const bar = document.getElementById("criteriaBar");
-  bar.style.display = "";
   bar.innerHTML = "";
+
+  if (Criteria.state.uiState === "local") {
+    bar.style.display = "none";
+    return;
+  }
+  bar.style.display = "";
 
   const box = document.createElement("div");
   box.className = "criteria-box";
@@ -172,8 +177,6 @@ function renderCriteriaBar() {
   const msg = document.createElement("span");
   if (Criteria.state.uiState === "signed-in") {
     msg.textContent = "Your saved criteria";
-  } else if (Criteria.state.uiState === "local") {
-    msg.textContent = "Saved on this device — sign in to keep your criteria across devices.";
   } else {
     msg.textContent = "Sign in to save your search criteria.";
   }
