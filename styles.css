@@ -75,7 +75,7 @@ h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
 .site-nav a.navright { margin-left: auto; }
 .site-nav a.navright.clearbtn { text-decoration: none; }
 
-/* ---- Shared site footer (non-home pages) ---- */
+/* ---- Shared site footer ---- */
 .site-footer { border-top: 1px solid var(--border); color: var(--muted); font-size: var(--fs-sm); margin-top: var(--sp-24); padding-top: var(--sp-16); padding-bottom: var(--sp-16); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--sp-8); }
 .site-footer a { color: inherit; text-decoration: none; }
 .site-footer a:hover { text-decoration: underline; }
@@ -191,10 +191,6 @@ td a:hover { text-decoration: underline; }
 .home .projects-grid a.card:hover { border-color: var(--accent); }
 .home .digital-projects-grid .project-row + .project-row { margin-top: var(--sp-16); }
 .home .project-row-label { display: block; color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 var(--sp-8); }
-.home footer { border-top: 1px solid var(--border); color: var(--muted); font-size: var(--fs-sm); }
-.home footer .container { padding-top: var(--sp-16); padding-bottom: var(--sp-16); }
-.home footer a { color: inherit; text-decoration: none; }
-.home footer a:hover { text-decoration: underline; }
 
 /* ---- Physical Projects gallery page ---- */
 .physical-page .back-link { display: inline-block; color: var(--muted); text-decoration: none; font-size: var(--fs-sm); margin-bottom: var(--sp-12); }
