@@ -5,11 +5,11 @@
 (function () {
   const BRAND = { label: "Seattle Jobs", href: "/projects/watchlist-jobs/" };
   const SITE_NAV = [
-    { label: "Global", href: "/projects/watchlist-jobs/global.html" },
-    { label: "Waitlist", href: "/projects/watchlist-jobs/waitlist/" },
     { label: "My Jobs", href: "/projects/watchlist-jobs/my-jobs.html" },
     { label: "My Criteria", href: "/projects/watchlist-jobs/my-criteria.html" },
+    { divider: true },
     { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },
+    { label: "Global", href: "/projects/watchlist-jobs/global.html" },
     { label: "Stats", href: "/projects/watchlist-jobs/stats/index.html" }
   ];
 
@@ -31,6 +31,13 @@
   inner.appendChild(brand);
 
   SITE_NAV.forEach(function (item) {
+    if (item.divider) {
+      const span = document.createElement("span");
+      span.className = "navdivider";
+      span.textContent = "|";
+      inner.appendChild(span);
+      return;
+    }
     const a = document.createElement("a");
     a.className = "navlink";
     a.href = item.href;
