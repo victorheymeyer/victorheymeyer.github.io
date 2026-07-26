@@ -26,12 +26,16 @@
     return ms < 0 ? 0 : Math.floor(ms / 86400000);
   }
 
+  // Suffix so a $45-65 hourly rate can't be misread as an annual salary.
+  const SALARY_PERIOD_SUFFIX = { HOUR: "/hr", DAY: "/day", WEEK: "/wk", MONTH: "/mo", YEAR: "/yr" };
+
   function fmtSalary(r) {
     if (r.salary_min == null && r.salary_max == null) return "";
     const cur = r.salary_currency || "";
     const n = (v) => v == null ? "" : Number(v).toLocaleString();
-    if (r.salary_min != null && r.salary_max != null) return cur + " " + n(r.salary_min) + " to " + n(r.salary_max);
-    return cur + " " + n(r.salary_min != null ? r.salary_min : r.salary_max);
+    const suffix = SALARY_PERIOD_SUFFIX[r.salary_period] || "";
+    if (r.salary_min != null && r.salary_max != null) return cur + " " + n(r.salary_min) + " to " + n(r.salary_max) + suffix;
+    return cur + " " + n(r.salary_min != null ? r.salary_min : r.salary_max) + suffix;
   }
 
   // A requisition code is a short token of uppercase letters/digits/hyphens that
