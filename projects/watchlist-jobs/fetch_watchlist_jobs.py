@@ -54,7 +54,7 @@ HASH_ALGO = "plain-v1"
 # see e.g. seattlechildrens__external, itron__itron, vantagedc__vantage).
 # Only fail the whole run loud when failures look like a systemic outage
 # rather than a couple of unlucky tenants.
-MAX_TOLERATED_FAILURES = 3
+MAX_TOLERATED_FAILURES = 10
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
