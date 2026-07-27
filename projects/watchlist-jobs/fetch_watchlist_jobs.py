@@ -525,6 +525,7 @@ def main():
 
     fact_rows, dim_rows = [], []
     failures = []
+    failure_rows = []
 
     for entry in watchlist:
         company, ats, slug = entry["company"], entry["ats"], entry["slug"]
@@ -532,6 +533,12 @@ def main():
         if ats not in SCRAPERS:
             print(f"SKIP {company:12s}: unknown ats '{ats}' (no scraper)")
             failures.append(company)
+            failure_rows.append({
+                "snapshot_date": snapshot_date,
+                "watchlist_company": company,
+                "ats": ats,
+                "error_message": f"unknown ats '{ats}' (no scraper)",
+            })
             continue
         try:
             jobs = SCRAPERS[ats](slug, **scraper_kwargs).fetch()
@@ -624,8 +631,15 @@ def main():
 
             print(f"OK   {company:12s} ({ats}/{slug}): {len(jobs)} jobs")
         except Exception as e:
-            print(f"FAIL {company:12s} ({ats}/{slug}): {type(e).__name__}: {e}")
+            error_message = f"{type(e).__name__}: {e}"
+            print(f"FAIL {company:12s} ({ats}/{slug}): {error_message}")
             failures.append(company)
+            failure_rows.append({
+                "snapshot_date": snapshot_date,
+                "watchlist_company": company,
+                "ats": ats,
+                "error_message": error_message[:2000],
+            })
 
     def dedupe(rows, keys):
         seen = {}
@@ -677,6 +691,17 @@ def main():
         .eq("snapshot_date", snapshot_date).limit(1).execute().count
     dim_count = sb.table("job_content").select("ats_id", count="exact").limit(1).execute().count
     print(f"Verification: {fact_count} fact rows for {snapshot_date}, {dim_count} rows in job_content")
+
+    if failure_rows:
+        sb.table("pull_failures").insert(failure_rows).execute()
+        print(f"Logged {len(failure_rows)} pull failure(s) to pull_failures")
+
+    # Longer retention than raw snapshots (10d) -- this table exists to
+    # surface week-over-week flakiness patterns per company, not just
+    # today's run.
+    FAILURE_RETENTION_DAYS = 30
+    failure_cutoff = (datetime.now(timezone.utc).date() - timedelta(days=FAILURE_RETENTION_DAYS)).isoformat()
+    sb.table("pull_failures").delete().lt("snapshot_date", failure_cutoff).execute()
 
     if failures:
         if len(failures) > MAX_TOLERATED_FAILURES:
