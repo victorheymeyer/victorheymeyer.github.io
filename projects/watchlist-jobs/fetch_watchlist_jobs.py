@@ -422,9 +422,7 @@ def classify_level(title):
 
 snapshot_date = datetime.now(SEATTLE_TZ).date().isoformat()
 
-FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "ats_type", "title", "location",
-             "is_remote", "department", "team", "employment_type", "salary_min", "salary_max",
-             "salary_currency", "salary_period", "posted_at", "fetched_at", "url", "apply_url",
+FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "title", "location", "posted_at",
              "description_hash", "hash_algo"]
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
             "url", "apply_url", "last_seen", "fetched_at", "discipline", "role_keyword",
