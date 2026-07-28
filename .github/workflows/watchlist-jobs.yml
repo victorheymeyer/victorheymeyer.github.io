@@ -2,7 +2,7 @@ name: Watchlist Jobs Daily
 
 on:
   schedule:
-    - cron: "0 9 * * *"   # daily at 09:00 UTC
+    - cron: "17 9 * * *"   # ~09:17 UTC (2 AM PDT); off the hour to dodge queue contention
   workflow_dispatch:        # lets you run it manually from the Actions tab
 
 jobs:
