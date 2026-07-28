@@ -11,9 +11,16 @@
 
   function fmtDate(d) {
     if (!d) return "";
+    // Plain date columns (snapshot_date, first_seen, description_last_change) are
+    // already the correct Seattle calendar day -- return as-is, don't reinterpret
+    // through any timezone (parsing "YYYY-MM-DD" as UTC and re-rendering in
+    // Seattle time would shift it back a day).
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
     const dt = new Date(d);
     if (isNaN(dt)) return d;
-    return dt.toISOString().slice(0, 10);
+    // Real timestamps (posted_at) carry a time-of-day, so bucket by Seattle day
+    // to match how snapshot_date/first_seen are computed -- not the UTC day.
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(dt);
   }
 
   // Days since a date string, or null when absent/unparseable (mirrors the

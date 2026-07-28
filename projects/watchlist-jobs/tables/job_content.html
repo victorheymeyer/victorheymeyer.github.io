@@ -133,7 +133,7 @@ function fmtDateTime(ts) {
   if (!ts) return "";
   const dt = new Date(ts);
   if (isNaN(dt)) return ts;
-  return dt.toLocaleString();
+  return dt.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }) + " PT";
 }
 
 function statCard(label, value) {

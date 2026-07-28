@@ -122,7 +122,7 @@ function fmtDateTime(ts) {
   if (!ts) return "";
   const dt = new Date(ts);
   if (isNaN(dt)) return ts;
-  return dt.toLocaleString();
+  return dt.toLocaleString("en-US", { timeZone: "America/Los_Angeles" }) + " PT";
 }
 
 function statCard(label, value) {
@@ -385,7 +385,7 @@ function render() {
     const days = Math.round((new Date(maxd) - new Date(mind)) / 86400000) + 1;
     document.getElementById("recencyHint").innerHTML =
       "Recency window (based on <code>snapshot_date</code>): " + fmtDate(mind) + " to " + fmtDate(maxd) + " (" + days + " days). " +
-      "The loader prunes snapshots older than 10 days, so this window is expected to hover around 10 days rather than grow indefinitely.";
+      "The loader prunes snapshots older than 7 days, so this window is expected to hover around 7 days rather than grow indefinitely.";
   }
 
   document.getElementById("breadthHint").innerHTML =
