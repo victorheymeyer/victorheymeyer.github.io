@@ -682,7 +682,7 @@ def main():
     print("  done")
 
     print("Pruning old raw snapshots...")
-    RETENTION_DAYS = 10
+    RETENTION_DAYS = 7
     cutoff_date = (datetime.now(timezone.utc).date() - timedelta(days=RETENTION_DAYS)).isoformat()
     sb.table("raw_watchlist_jobs").delete().lt("snapshot_date", cutoff_date).execute()
     print(f"  raw_watchlist_jobs: pruned snapshots older than {cutoff_date}")
