@@ -268,7 +268,7 @@ ROLE_RULES = [
     {"order": 48, "role": 'Inspector', "op": None, "keywords": ['Inspector']},
     {"order": 49, "role": 'Economist', "op": None, "keywords": ['Economist']},
     {"order": 50, "role": 'Cook', "op": 'OR', "keywords": ['Cook', 'Chef']},
-    {"order": 51, "role": 'Machinist', "op": 'OR', "keywords": ['Machinist', 'Machine']},
+    {"order": 51, "role": 'Machinist', "op": 'OR', "keywords": ['Machinist', 'Machine Operator']},
     {"order": 52, "role": 'Trainer', "op": None, "keywords": ['Trainer']},
     {"order": 53, "role": 'Business Planner/Planning', "op": 'OR', "keywords": ['Business Planner', 'Business Planning']},
     {"order": 54, "role": 'Consultant', "op": None, "keywords": ['Consultant']},
