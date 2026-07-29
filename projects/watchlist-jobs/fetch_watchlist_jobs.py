@@ -471,6 +471,16 @@ def load_watchlist():
     return watchlist
 
 
+def load_pull_successes(snapshot_date):
+    """Companies already successfully scraped+upserted for snapshot_date, so
+    a same-day retry (of the whole workflow) can skip redoing them instead
+    of re-scraping and re-upserting everyone from scratch. See
+    pull_successes migration for why this exists."""
+    resp = sb.table("pull_successes").select("watchlist_company") \
+        .eq("snapshot_date", snapshot_date).execute()
+    return {r["watchlist_company"] for r in (resp.data or [])}
+
+
 def load_change_tracking_state():
     """Bulk pre-read of job_content's change-tracking columns, keyed by
     (watchlist_company, ats_id), so the per-job loop below can tell a real
@@ -518,14 +528,24 @@ def main():
     watchlist = load_watchlist()
     print(f"Loaded {len(watchlist)} active companies from watchlist_companies")
 
+    already_done = load_pull_successes(snapshot_date)
+    pending = [e for e in watchlist if e["company"] not in already_done]
+    if not pending:
+        print(f"All {len(watchlist)} companies already loaded for {snapshot_date}; nothing to do.")
+        return
+    if already_done:
+        print(f"{len(already_done)} companies already loaded for {snapshot_date}; "
+              f"scraping remaining {len(pending)}")
+
     change_state = load_change_tracking_state()
     print(f"Pre-read change-tracking state for {len(change_state)} jobs")
 
     fact_rows, dim_rows = [], []
     failures = []
     failure_rows = []
+    success_rows = []
 
-    for entry in watchlist:
+    for entry in pending:
         company, ats, slug = entry["company"], entry["ats"], entry["slug"]
         scraper_kwargs = entry.get("scraper_kwargs") or {}
         if ats not in SCRAPERS:
@@ -628,6 +648,12 @@ def main():
                 dim_rows.append({k: d.get(k) for k in DIM_COLS})
 
             print(f"OK   {company:12s} ({ats}/{slug}): {len(jobs)} jobs")
+            success_rows.append({
+                "snapshot_date": snapshot_date,
+                "watchlist_company": company,
+                "ats": ats,
+                "job_count": len(jobs),
+            })
         except Exception as e:
             error_message = f"{type(e).__name__}: {e}"
             print(f"FAIL {company:12s} ({ats}/{slug}): {error_message}")
@@ -690,16 +716,46 @@ def main():
     dim_count = sb.table("job_content").select("ats_id", count="exact").limit(1).execute().count
     print(f"Verification: {fact_count} fact rows for {snapshot_date}, {dim_count} rows in job_content")
 
+    # Checkpoint successful companies so a same-day retry skips them (see
+    # load_pull_successes). Best-effort: if this write fails, the only cost
+    # is a retry re-scraping companies it didn't need to -- exactly today's
+    # status quo -- not a lost or corrupted run.
+    if success_rows:
+        try:
+            sb.table("pull_successes").upsert(
+                success_rows, on_conflict="snapshot_date,watchlist_company"
+            ).execute()
+            print(f"Recorded {len(success_rows)} pull success(es) to pull_successes")
+        except Exception as e:
+            print(f"WARNING: failed to record pull successes to pull_successes: {type(e).__name__}: {e}")
+        try:
+            sb.table("pull_successes").delete().lt("snapshot_date", cutoff_date).execute()
+        except Exception as e:
+            print(f"WARNING: failed to prune old pull_successes rows: {type(e).__name__}: {e}")
+
+    # pull_failures is an operational log table nothing else reads. Its own
+    # write failing (e.g. a missing grant, as happened 2026-07-28) must not
+    # exit(1) the run -- the real data load above already succeeded, and a
+    # hard failure here previously caused a full re-scrape+re-upsert retry
+    # of every company for no reason, tripling a day's write churn onto
+    # job_content/raw_watchlist_jobs and bloating both past their vacuum
+    # cadence. Log and move on instead.
     if failure_rows:
-        sb.table("pull_failures").insert(failure_rows).execute()
-        print(f"Logged {len(failure_rows)} pull failure(s) to pull_failures")
+        try:
+            sb.table("pull_failures").insert(failure_rows).execute()
+            print(f"Logged {len(failure_rows)} pull failure(s) to pull_failures")
+        except Exception as e:
+            print(f"WARNING: failed to log pull failures to pull_failures: {type(e).__name__}: {e}")
 
     # Longer retention than raw snapshots (10d) -- this table exists to
     # surface week-over-week flakiness patterns per company, not just
     # today's run.
-    FAILURE_RETENTION_DAYS = 30
-    failure_cutoff = (datetime.now(timezone.utc).date() - timedelta(days=FAILURE_RETENTION_DAYS)).isoformat()
-    sb.table("pull_failures").delete().lt("snapshot_date", failure_cutoff).execute()
+    try:
+        FAILURE_RETENTION_DAYS = 30
+        failure_cutoff = (datetime.now(timezone.utc).date() - timedelta(days=FAILURE_RETENTION_DAYS)).isoformat()
+        sb.table("pull_failures").delete().lt("snapshot_date", failure_cutoff).execute()
+    except Exception as e:
+        print(f"WARNING: failed to prune old pull_failures rows: {type(e).__name__}: {e}")
 
     if failures:
         if len(failures) > MAX_TOLERATED_FAILURES:
