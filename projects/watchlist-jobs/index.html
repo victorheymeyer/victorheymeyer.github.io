@@ -18,6 +18,14 @@
   <div id="errBox"></div>
 
   <div class="panel" id="listPanel" style="display:none">
+    <table>
+      <thead>
+        <tr><th style="width:140px">Company</th><th>Title</th><th style="width:50px">Link</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="pager" id="pager"></div>
+    <h2 style="margin-top: var(--sp-24)">Filters:</h2>
     <div class="controls">
       <input type="text" id="search" placeholder="Search title, company, location, or department">
       <select id="companySel"><option value="">All companies</option></select>
@@ -28,13 +36,6 @@
       <label class="chk"><input type="checkbox" id="remChk" checked> Remote-WA Jobs</label>
     </div>
     <div id="count" class="hint"></div>
-    <table>
-      <thead>
-        <tr><th style="width:140px">Company</th><th>Title</th><th style="width:70px">Link</th></tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
-    <div class="pager" id="pager"></div>
   </div>
 
   <div class="loading" id="loading">Connecting to Supabase...</div>
