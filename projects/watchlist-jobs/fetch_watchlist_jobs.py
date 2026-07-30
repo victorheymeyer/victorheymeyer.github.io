@@ -41,17 +41,24 @@ def vacuum_full(table_name):
     if not JOBS_SUPABASE_DB_URL:
         print(f"WARNING: JOBS_SUPABASE_DB_URL not set, skipping VACUUM of {table_name}")
         return
+    conn = None
     try:
         conn = psycopg2.connect(JOBS_SUPABASE_DB_URL)
         conn.autocommit = True
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute(pg_sql.SQL("VACUUM FULL public.{}").format(pg_sql.Identifier(table_name)))
-                cur.execute(pg_sql.SQL("VACUUM public.{}").format(pg_sql.Identifier(table_name)))
-        conn.close()
+        # No `with conn:` here -- that's psycopg2's transaction-wrapper
+        # context manager (commit/rollback on exit), and pairing it with
+        # autocommit mode is exactly what produced "VACUUM cannot run
+        # inside a transaction block" on the first live test of this.
+        cur = conn.cursor()
+        cur.execute(pg_sql.SQL("VACUUM FULL public.{}").format(pg_sql.Identifier(table_name)))
+        cur.execute(pg_sql.SQL("VACUUM public.{}").format(pg_sql.Identifier(table_name)))
+        cur.close()
         print(f"  VACUUM FULL + VACUUM done for {table_name}")
     except Exception as e:
         print(f"WARNING: failed to vacuum {table_name}: {type(e).__name__}: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
 
 SCRAPERS = {
     "greenhouse": GreenhouseScraper,
