@@ -7,7 +7,11 @@ import sys
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+import psycopg2
+from psycopg2 import sql as pg_sql
+
 from ats_scrapers.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper, LeverScraper, WorkdayScraper, WorkableScraper, SmartRecruitersScraper
+from capture_table_stats import TARGETS as STATS_TARGETS
 from supabase import create_client
 
 # The site's audience is Seattle-area jobs, so a "day" of postings is a Seattle
@@ -19,6 +23,35 @@ SEATTLE_TZ = ZoneInfo("America/Los_Angeles")
 SUPABASE_URL = os.environ["JOBS_SUPABASE_URL"]
 SUPABASE_SERVICE_KEY = os.environ["JOBS_SUPABASE_SERVICE_KEY"]
 sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# Direct (non-PostgREST) connection, needed only for VACUUM: it cannot run
+# inside a transaction, and every supabase-py call -- including .rpc() --
+# is wrapped in one by PostgREST. Optional on purpose: the daily pg_cron
+# VACUUM FULL + nightly fallback (see vacuum_full_fallback) still cover
+# reclaim if this secret is unset or the connection fails, so a loader run
+# should never fail over this.
+JOBS_SUPABASE_DB_URL = os.environ.get("JOBS_SUPABASE_DB_URL")
+
+
+def vacuum_full(table_name):
+    """VACUUM FULL + VACUUM a table right after the loader finishes writing
+    it, so reclaim happens whenever a run actually completes instead of
+    waiting for a fixed daily cron slot -- see the 2026-07-29 conversation
+    where a same-day retry's bloat sat unreclaimed for ~10 hours."""
+    if not JOBS_SUPABASE_DB_URL:
+        print(f"WARNING: JOBS_SUPABASE_DB_URL not set, skipping VACUUM of {table_name}")
+        return
+    try:
+        conn = psycopg2.connect(JOBS_SUPABASE_DB_URL)
+        conn.autocommit = True
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(pg_sql.SQL("VACUUM FULL public.{}").format(pg_sql.Identifier(table_name)))
+                cur.execute(pg_sql.SQL("VACUUM public.{}").format(pg_sql.Identifier(table_name)))
+        conn.close()
+        print(f"  VACUUM FULL + VACUUM done for {table_name}")
+    except Exception as e:
+        print(f"WARNING: failed to vacuum {table_name}: {type(e).__name__}: {e}")
 
 SCRAPERS = {
     "greenhouse": GreenhouseScraper,
@@ -715,6 +748,25 @@ def main():
         .eq("snapshot_date", snapshot_date).limit(1).execute().count
     dim_count = sb.table("job_content").select("ats_id", count="exact").limit(1).execute().count
     print(f"Verification: {fact_count} fact rows for {snapshot_date}, {dim_count} rows in job_content")
+
+    print("Vacuuming raw_watchlist_jobs...")
+    vacuum_full("raw_watchlist_jobs")
+    print("Vacuuming job_content...")
+    vacuum_full("job_content")
+
+    # Capture stats right after vacuuming so table_stats reflects the
+    # settled, post-reclaim size -- not mid-day dead-tuple bloat. This
+    # used to be a separately scheduled workflow (capture-table-stats.yml,
+    # 12:15 UTC) timed to run after the vacuum crons; that schedule already
+    # drifted stale once when the vacuum crons moved to 13:45/13:49 UTC.
+    # Running it right after this run's own vacuum can't drift.
+    print("Capturing table stats...")
+    for params in STATS_TARGETS:
+        try:
+            sb.rpc("capture_table_stats", params).execute()
+        except Exception as e:
+            print(f"WARNING: failed to capture stats for {params}: {type(e).__name__}: {e}")
+    print("  capture_table_stats done")
 
     # Checkpoint successful companies so a same-day retry skips them (see
     # load_pull_successes). Best-effort: if this write fails, the only cost

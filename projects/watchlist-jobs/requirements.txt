@@ -1,5 +1,10 @@
 projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl
 supabase
+# Needed only for VACUUM after writes: the supabase-py client's PostgREST
+# transport wraps every call (including RPC) in a transaction, and VACUUM
+# cannot run inside one. psycopg2 gives a direct, autocommit connection
+# instead. See vacuum_full() in fetch_watchlist_jobs.py.
+psycopg2-binary
 # Pinned so zoneinfo can resolve America/Los_Angeles even if the runner
 # image's system tz database is missing or stale.
 tzdata

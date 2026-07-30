@@ -22,4 +22,5 @@ jobs:
         env:
           JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
           JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
+          JOBS_SUPABASE_DB_URL: ${{ secrets.JOBS_SUPABASE_DB_URL }}
         run: python projects/watchlist-jobs/fetch_watchlist_jobs.py
