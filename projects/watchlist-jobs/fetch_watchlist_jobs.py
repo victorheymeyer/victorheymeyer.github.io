@@ -775,6 +775,19 @@ def main():
             print(f"WARNING: failed to capture stats for {params}: {type(e).__name__}: {e}")
     print("  capture_table_stats done")
 
+    # job_stats is the business-facing counterpart to table_stats -- one row
+    # per day of company/job counts by active-vs-new and Seattle/RemoteWA
+    # geography (see capture_job_stats() in
+    # supabase/migrations/20260730120100_create_capture_job_stats_function.sql).
+    # Captured here for the same reason table_stats is: right after the
+    # day's load and vacuum settle, so counts reflect the finished run.
+    print("Capturing job stats...")
+    try:
+        sb.rpc("capture_job_stats").execute()
+        print("  capture_job_stats done")
+    except Exception as e:
+        print(f"WARNING: failed to capture job stats: {type(e).__name__}: {e}")
+
     # Checkpoint successful companies so a same-day retry skips them (see
     # load_pull_successes). Best-effort: if this write fails, the only cost
     # is a retry re-scraping companies it didn't need to -- exactly today's

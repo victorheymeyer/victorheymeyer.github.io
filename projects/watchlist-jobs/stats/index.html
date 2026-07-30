@@ -39,6 +39,27 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 // stats subpage is added; the section renders itself from that.
 const SECTIONS = [
   {
+    title: "Job Stats",
+    href: "jobstats.html",
+    desc: "Daily company and job counts by active-vs-new status and Seattle/RemoteWA geography.",
+    load: async () => {
+      const { data, error } = await supabaseClient
+        .from("job_stats")
+        .select("company_count_any_active_jobs_global,job_count_active_global,company_count_any_new_jobs_global,job_count_new_global,snapshot_date")
+        .order("snapshot_date", { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      if (!data || !data.length) return [{ label: "Status", value: "No captures yet" }];
+      const row = data[0];
+      return [
+        { label: "Companies w/ active jobs", value: row.company_count_any_active_jobs_global },
+        { label: "Active jobs", value: row.job_count_active_global },
+        { label: "Companies w/ new jobs", value: row.company_count_any_new_jobs_global },
+        { label: "New jobs", value: row.job_count_new_global },
+      ];
+    }
+  },
+  {
     title: "Top Employers (WA)",
     href: "top_employers.html",
     desc: "Top 50 companies by number of open Washington-based postings on the latest fetch day.",

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Stats</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+<script defer src="/site-footer.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>Job Stats</h1>
+  <div class="sub" id="sub">Loading...</div>
+
+  <div id="errBox"></div>
+
+  <div class="panel" id="companiesPanel" style="display:none">
+    <h2>Companies</h2>
+    <p class="hint">Company counts, scoped to every company that appears anywhere in job_content.</p>
+    <div class="cards" id="companiesCards"></div>
+  </div>
+
+  <div class="panel" id="jobsPanel" style="display:none">
+    <h2>Jobs</h2>
+    <p class="hint">Direct job counts (one per open posting), for the same active/new &times; geography breakdown.</p>
+    <div class="cards" id="jobsCards"></div>
+  </div>
+
+  <div class="loading" id="loading">Connecting to Supabase...</div>
+
+  <div id="siteFooter"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function showError(msg) {
+  document.getElementById("errBox").innerHTML =
+    '<div class="err"><strong>Could not load data.</strong><br>' + msg +
+    '<br><br>If this is a permissions error, remember both the RLS <code>select</code> policy for <code>anon</code> AND the table <code>GRANT</code> are needed for reads.</div>';
+}
+
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return d;
+  return (dt.getMonth() + 1) + "/" + dt.getDate() + "/" + dt.getFullYear();
+}
+
+function statCard(label, value) {
+  const n = Number(value);
+  return '<div class="card"><div class="n">' + (isNaN(n) ? "-" : n.toLocaleString()) + '</div><div class="l">' + esc(label) + '</div></div>';
+}
+
+// [label, column] pairs, in display order.
+const COMPANY_CARDS = [
+  ["Active pull (watchlist)", "company_count_watchlist_active_pull"],
+  ["0 active jobs", "company_count_zero_active_jobs_global"],
+  ["1+ active jobs", "company_count_any_active_jobs_global"],
+  ["1+ active, Seattle", "company_count_any_active_jobs_seattle"],
+  ["1+ active, RemoteWA", "company_count_any_active_jobs_remote_wa"],
+  ["1+ active, Seattle or RemoteWA", "company_count_any_active_jobs_seattle_or_remote_wa"],
+  ["0 new jobs", "company_count_zero_new_jobs_global"],
+  ["1+ new jobs", "company_count_any_new_jobs_global"],
+  ["1+ new, Seattle", "company_count_any_new_jobs_seattle"],
+  ["1+ new, RemoteWA", "company_count_any_new_jobs_remote_wa"],
+  ["1+ new, Seattle or RemoteWA", "company_count_any_new_jobs_seattle_or_remote_wa"],
+  ["1+ new, Seattle and RemoteWA", "company_count_any_new_jobs_seattle_and_remote_wa"],
+];
+
+const JOB_CARDS = [
+  ["Active, global", "job_count_active_global"],
+  ["Active, Seattle", "job_count_active_seattle"],
+  ["Active, RemoteWA", "job_count_active_remote_wa"],
+  ["Active, Seattle or RemoteWA", "job_count_active_seattle_or_remote_wa"],
+  ["New, global", "job_count_new_global"],
+  ["New, Seattle", "job_count_new_seattle"],
+  ["New, RemoteWA", "job_count_new_remote_wa"],
+  ["New, Seattle or RemoteWA", "job_count_new_seattle_or_remote_wa"],
+  ["New, Seattle and RemoteWA", "job_count_new_seattle_and_remote_wa"],
+];
+
+async function load() {
+  const { data, error } = await supabaseClient
+    .from("job_stats")
+    .select("*")
+    .order("snapshot_date", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  if (!data || !data.length) {
+    document.getElementById("sub").textContent = "No job stats captured yet.";
+    return;
+  }
+
+  const row = data[0];
+  document.getElementById("sub").textContent = "Latest snapshot: " + fmtDate(row.snapshot_date);
+
+  document.getElementById("companiesCards").innerHTML =
+    COMPANY_CARDS.map(([label, col]) => statCard(label, row[col])).join("");
+  document.getElementById("companiesPanel").style.display = "";
+
+  document.getElementById("jobsCards").innerHTML =
+    JOB_CARDS.map(([label, col]) => statCard(label, row[col])).join("");
+  document.getElementById("jobsPanel").style.display = "";
+}
+
+load()
+  .then(() => { document.getElementById("loading").style.display = "none"; })
+  .catch(err => {
+    document.getElementById("loading").style.display = "none";
+    showError((err && err.message) ? err.message : String(err));
+  });
+</script>
+</body>
+</html>
