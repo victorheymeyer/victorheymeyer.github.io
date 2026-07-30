@@ -11,17 +11,19 @@
 ----------------------------------------------------------------------------------------------------------
 
 
-****Built with:** Claude Chat, and Claude Code
+****Built with:** Claude Code (Primary) and Claud Chat + Gemini Pro  
 
 **Data Sources:**
 - **Company ATS and careers APIs:** Examples: Greenhouse, Ashby, Google, Eightfold/Microsoft, and Workday
 
 **Tools & Infrastructure:**
-- **Research**: Gemini Pro
-- **Testing:** Google Colab
+- **Research**: Gemini Pro (Primary) | Claude (Secondary)
+- **Coding:** Claude Code (Primary) | Claude Chat and Gemini Pro (Secondary)
+- **Pipeline Testing:** Google Colab + Claude Chat 
+- **Classification:** Excel + Claude => Regex  (LLM Rule Induction)  
 - **Repo/Version Control:** Git and GitHub
 - **Editor:** VS Code
-- **Web scraping:** JobHive (`jobhive-py`) - Open Source package/public repo
+- **Web scraping:** https://github.com/kalil0321/ats-scrapers/ - Open Source package/public repo
 - **Storage & Schema Migration:** Supabase & Supabase CLI
 - **Continuous Integration/Deployment:** GitHub Actions
 - **Hosting:** GitHub Pages
