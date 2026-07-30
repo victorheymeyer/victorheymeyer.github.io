@@ -1,6 +1,6 @@
 # Watchlist Jobs
 
-**General Overview:** A daily job tracker for Seattle-area and remote-Washington roles. It scrapes public ATS boards (e.g. Greenhouse, Ashby, Lever, Workday) across hundreds of companies and surfaces new Seattle openings on a single dashboard, filtered by personal criteria.
+**General Overview:** A daily job tracker for Seattle-area and remote-Washington roles. It scrapes public ATS boards (e.g. Greenhouse, Ashby, Lever, Workday) across hundreds of companies and surfaces ONLY new Seattle openings, filtered by personal criteria and ranked based on a resume.
 
 <div align="center">
   <img src="images/Jobs-Tracker-Pipeline-Basic.png" alt="Daily job pipeline: from company watchlist to a ranked daily digest" width="800">
