@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import psycopg2
 from psycopg2 import sql as pg_sql
 
-from ats_scrapers.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper, LeverScraper, WorkdayScraper, WorkableScraper, SmartRecruitersScraper
+from ats_scrapers.scrapers import GreenhouseScraper, AshbyScraper, AmazonScraper, AppleScraper, GoogleScraper, TikTokScraper, UberScraper, EightfoldScraper, LeverScraper, WorkdayScraper, WorkableScraper, SmartRecruitersScraper, RipplingScraper
 from capture_table_stats import TARGETS as STATS_TARGETS
 from supabase import create_client
 
@@ -73,6 +73,7 @@ SCRAPERS = {
     "workday": WorkdayScraper,
     "workable": WorkableScraper,
     "smartrecruiters": SmartRecruitersScraper,
+    "rippling": RipplingScraper,
 }
 
 # --- Description fingerprint (hash re-anchoring) ------------------------------
