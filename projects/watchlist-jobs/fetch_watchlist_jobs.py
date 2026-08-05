@@ -734,6 +734,10 @@ def main():
     sb.rpc("refresh_job_freshness", {"run_date": snapshot_date}).execute()
     print("  refresh_job_freshness done")
 
+    print("Refreshing company first-seen dates...")
+    sb.rpc("refresh_company_first_seen").execute()
+    print("  refresh_company_first_seen done")
+
     print("Refreshing location flags...")
     sb.rpc("refresh_location_flags").execute()
     print("  refresh_location_flags done")
