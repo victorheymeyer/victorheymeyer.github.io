@@ -1,2 +1,4 @@
 .claude/
 projects/watchlist-jobs/vendor/_extracted/
+__pycache__/
+*.pyc
