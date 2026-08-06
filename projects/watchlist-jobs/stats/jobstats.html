@@ -34,6 +34,12 @@
     <div class="cards" id="atsCards"></div>
   </div>
 
+  <div class="panel" id="storagePanel" style="display:none">
+    <h2>Storage</h2>
+    <p class="hint">Total Supabase Postgres database size (all tables and indexes; not Storage buckets).</p>
+    <div class="cards" id="storageCards"></div>
+  </div>
+
   <div class="loading" id="loading">Connecting to Supabase...</div>
 
   <div id="siteFooter"></div>
@@ -70,6 +76,11 @@ function statCard(label, value) {
   return '<div class="card"><div class="n">' + (isNaN(n) ? "-" : n.toLocaleString()) + '</div><div class="l">' + esc(label) + '</div></div>';
 }
 
+function mbCard(label, value) {
+  const n = Number(value);
+  return '<div class="card"><div class="n">' + (isNaN(n) ? "-" : n.toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' MB') + '</div><div class="l">' + esc(label) + '</div></div>';
+}
+
 // [label, column] pairs, in display order.
 const COMPANY_CARDS = [
   ["Active pull (watchlist)", "company_count_watchlist_active_pull"],
@@ -103,6 +114,10 @@ const ATS_CARDS = [
   ["Yielding active jobs", "ats_count_with_active_jobs"],
 ];
 
+const STORAGE_CARDS = [
+  ["Total database size", "storage_mb_total"],
+];
+
 async function load() {
   const { data, error } = await supabaseClient
     .from("job_stats")
@@ -129,6 +144,10 @@ async function load() {
   document.getElementById("atsCards").innerHTML =
     ATS_CARDS.map(([label, col]) => statCard(label, row[col])).join("");
   document.getElementById("atsPanel").style.display = "";
+
+  document.getElementById("storageCards").innerHTML =
+    STORAGE_CARDS.map(([label, col]) => mbCard(label, row[col])).join("");
+  document.getElementById("storagePanel").style.display = "";
 }
 
 load()

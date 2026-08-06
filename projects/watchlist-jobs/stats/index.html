@@ -16,6 +16,10 @@
 
   <div id="errBox"></div>
 
+  <h2>Key Metrics</h2>
+  <div class="sub">Headline numbers with recent trend, pulled from job_stats.</div>
+  <div id="kpiSection"></div>
+
   <div id="sections"></div>
 
   <h2>Table Stats</h2>
@@ -33,6 +37,39 @@ const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+// KPI row: full-width headline stat + trend sparkline, sourced from job_stats
+// history. Add an entry (label, hint, column, targetValue, and optionally
+// unit/decimals) for each new KPI.
+const KPIS = [
+  {
+    label: "ATS Count",
+    hint: "Distinct ATS platforms currently yielding active postings.",
+    column: "ats_count_with_active_jobs",
+    targetValue: 10,
+  },
+  {
+    label: "Active Jobs",
+    hint: "Open postings on the latest snapshot located in Seattle or remote-WA.",
+    column: "job_count_active_seattle_or_remote_wa",
+    targetValue: 10000,
+  },
+  {
+    label: "Active Companies",
+    hint: "Companies with at least one active posting in Seattle or remote-WA on the latest snapshot.",
+    column: "company_count_any_active_jobs_seattle_or_remote_wa",
+    targetValue: 500,
+  },
+  {
+    label: "DB Size",
+    hint: "Total Supabase Postgres database size (all tables and indexes; not Storage buckets).",
+    column: "storage_mb_total",
+    targetValue: 500,
+    unit: "MB",
+    decimals: 1,
+  },
+];
+const kpiCharts = [];
 
 // One entry per page in this stats/ folder. Add a new entry (title, href,
 // desc, and a load() that returns [{label, value}, ...]) when a new
@@ -221,6 +258,144 @@ async function renderTable(table) {
   }
 }
 
+async function loadKpiHistory(column) {
+  const { data, error } = await supabaseClient
+    .from("job_stats")
+    .select("snapshot_date," + column)
+    .order("snapshot_date", { ascending: true })
+    .not(column, "is", null)
+    .limit(400);
+  if (error) throw error;
+  return data || [];
+}
+
+function drawSparkline(canvas, rows, column, target) {
+  const wrap = canvas.parentElement;
+  const wrapStyle = getComputedStyle(wrap);
+  const innerW = wrap.clientWidth - parseFloat(wrapStyle.paddingLeft) - parseFloat(wrapStyle.paddingRight);
+  const cssW = Math.max(160, innerW || 160);
+  const cssH = 40;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cssW + "px";
+  canvas.style.height = cssH + "px";
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  if (rows.length < 2) {
+    ctx.fillStyle = "#9aa3b2";
+    ctx.font = "12px -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Not enough history yet", cssW / 2, cssH / 2);
+    return;
+  }
+
+  const padX = 4, padY = 6;
+  const plotW = cssW - padX * 2, plotH = cssH - padY * 2;
+  const values = rows.map(r => Number(r[column]));
+  const min = 0;
+  let max = Math.max(...values);
+  if (target != null) max = Math.max(max, target);
+  const range = max - min || 1;
+
+  const points = values.map((v, i) => [
+    padX + (i / (values.length - 1)) * plotW,
+    padY + plotH - ((v - min) / range) * plotH,
+  ]);
+
+  if (target != null) {
+    const ty = padY + plotH - ((target - min) / range) * plotH;
+    ctx.save();
+    ctx.setLineDash([3, 2]);
+    ctx.strokeStyle = "rgba(154, 163, 178, 0.6)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padX, ty);
+    ctx.lineTo(cssW - padX, ty);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], cssH - padY);
+  points.forEach(([x, y]) => ctx.lineTo(x, y));
+  ctx.lineTo(points[points.length - 1][0], cssH - padY);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(79, 156, 255, 0.10)";
+  ctx.fill();
+
+  ctx.beginPath();
+  points.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+  ctx.strokeStyle = "#4f9cff";
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.stroke();
+
+  const [lx, ly] = points[points.length - 1];
+  ctx.beginPath();
+  ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+  ctx.fillStyle = "#171a21";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = "#4f9cff";
+  ctx.fill();
+}
+
+function fmtKpiValue(kpi, n) {
+  if (n == null || isNaN(n)) return "-";
+  const opts = kpi.decimals != null
+    ? { minimumFractionDigits: kpi.decimals, maximumFractionDigits: kpi.decimals }
+    : undefined;
+  return Number(n).toLocaleString(undefined, opts) + (kpi.unit ? " " + kpi.unit : "");
+}
+
+async function renderKpi(kpi) {
+  const row = document.createElement("div");
+  row.className = "kpi-row";
+  row.innerHTML =
+    '<div class="kpi-sec kpi-sec-title">' +
+      '<div class="kpi-label">' + esc(kpi.label) + '</div>' +
+      '<div class="kpi-value">&hellip;</div>' +
+    '</div>' +
+    '<div class="kpi-sec kpi-sec-pct">' +
+      '<div class="kpi-label">% of Target</div>' +
+      '<div class="kpi-value kpi-pct-value">&hellip;</div>' +
+    '</div>' +
+    '<div class="kpi-sec kpi-sec-target">' +
+      '<div class="kpi-label">Target</div>' +
+      '<div class="kpi-value">' + esc(Number(kpi.targetValue).toLocaleString()) + '</div>' +
+    '</div>' +
+    '<div class="kpi-sec kpi-sec-chart"><canvas></canvas></div>' +
+    '<div class="kpi-sec kpi-sec-desc">' +
+      '<p class="kpi-hint">' + esc(kpi.hint) + '</p>' +
+      '<code class="kpi-col">' + esc(kpi.column) + '</code>' +
+    '</div>';
+  document.getElementById("kpiSection").appendChild(row);
+
+  const valueEl = row.querySelector(".kpi-value");
+  const pctEl = row.querySelector(".kpi-pct-value");
+  const canvas = row.querySelector("canvas");
+  try {
+    const rows = await loadKpiHistory(kpi.column);
+    const latest = rows.length ? Number(rows[rows.length - 1][kpi.column]) : null;
+    valueEl.textContent = fmtKpiValue(kpi, latest);
+    pctEl.textContent = (latest != null && kpi.targetValue)
+      ? Math.round((latest / kpi.targetValue) * 100) + "%"
+      : "-";
+    kpiCharts.push({ canvas, rows, column: kpi.column, target: kpi.targetValue });
+    drawSparkline(canvas, rows, kpi.column, kpi.targetValue);
+  } catch (err) {
+    valueEl.textContent = "-";
+    pctEl.textContent = "-";
+    showError((err && err.message) ? err.message : String(err));
+  }
+}
+
 async function renderSection(section) {
   const panel = document.createElement("div");
   panel.className = "stat-row";
@@ -244,8 +419,13 @@ async function renderSection(section) {
   }
 }
 
+KPIS.forEach(renderKpi);
 SECTIONS.forEach(renderSection);
 TABLES.forEach(renderTable);
+
+window.addEventListener("resize", () => {
+  kpiCharts.forEach(k => drawSparkline(k.canvas, k.rows, k.column, k.target));
+});
 </script>
 </body>
 </html>
