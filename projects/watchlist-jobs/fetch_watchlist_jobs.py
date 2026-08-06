@@ -738,6 +738,10 @@ def main():
     sb.rpc("refresh_company_first_seen").execute()
     print("  refresh_company_first_seen done")
 
+    print("Refreshing company last-seen dates...")
+    sb.rpc("refresh_company_last_seen").execute()
+    print("  refresh_company_last_seen done")
+
     print("Refreshing location flags...")
     sb.rpc("refresh_location_flags").execute()
     print("  refresh_location_flags done")
