@@ -4,7 +4,7 @@ import html as html_mod
 import os
 import re
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import psycopg2
@@ -756,7 +756,7 @@ def main():
 
     print("Pruning old raw snapshots...")
     RETENTION_DAYS = 7
-    cutoff_date = (datetime.now(timezone.utc).date() - timedelta(days=RETENTION_DAYS)).isoformat()
+    cutoff_date = (datetime.now(SEATTLE_TZ).date() - timedelta(days=RETENTION_DAYS)).isoformat()
     sb.table("raw_watchlist_jobs").delete().lt("snapshot_date", cutoff_date).execute()
     print(f"  raw_watchlist_jobs: pruned snapshots older than {cutoff_date}")
 
@@ -833,7 +833,7 @@ def main():
     # today's run.
     try:
         FAILURE_RETENTION_DAYS = 30
-        failure_cutoff = (datetime.now(timezone.utc).date() - timedelta(days=FAILURE_RETENTION_DAYS)).isoformat()
+        failure_cutoff = (datetime.now(SEATTLE_TZ).date() - timedelta(days=FAILURE_RETENTION_DAYS)).isoformat()
         sb.table("pull_failures").delete().lt("snapshot_date", failure_cutoff).execute()
     except Exception as e:
         print(f"WARNING: failed to prune old pull_failures rows: {type(e).__name__}: {e}")
