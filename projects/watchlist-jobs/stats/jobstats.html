@@ -28,6 +28,12 @@
     <div class="cards" id="jobsCards"></div>
   </div>
 
+  <div class="panel" id="atsPanel" style="display:none">
+    <h2>ATS Platforms</h2>
+    <p class="hint">Distinct ATS platforms in use, two ways.</p>
+    <div class="cards" id="atsCards"></div>
+  </div>
+
   <div class="loading" id="loading">Connecting to Supabase...</div>
 
   <div id="siteFooter"></div>
@@ -92,6 +98,11 @@ const JOB_CARDS = [
   ["New, Seattle and RemoteWA", "job_count_new_seattle_and_remote_wa"],
 ];
 
+const ATS_CARDS = [
+  ["Active watchlist companies", "ats_count_watchlist_active"],
+  ["Yielding active jobs", "ats_count_with_active_jobs"],
+];
+
 async function load() {
   const { data, error } = await supabaseClient
     .from("job_stats")
@@ -114,6 +125,10 @@ async function load() {
   document.getElementById("jobsCards").innerHTML =
     JOB_CARDS.map(([label, col]) => statCard(label, row[col])).join("");
   document.getElementById("jobsPanel").style.display = "";
+
+  document.getElementById("atsCards").innerHTML =
+    ATS_CARDS.map(([label, col]) => statCard(label, row[col])).join("");
+  document.getElementById("atsPanel").style.display = "";
 }
 
 load()
