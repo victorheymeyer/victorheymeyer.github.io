@@ -11,15 +11,13 @@
 <body>
 <div id="siteNav"></div>
 <div class="wrap">
-  <h1>Stats</h1>
-  <div class="sub">Dashboards and reference data for the watchlist jobs project.</div>
-
   <div id="errBox"></div>
 
   <h2>Key Metrics</h2>
-  <div class="sub">Headline numbers with recent trend, pulled from job_stats.</div>
+  <div class="sub">Targets for Sept 2026.</div>
   <div id="kpiSection"></div>
 
+  <h2>Other Stats</h2>
   <div id="sections"></div>
 
   <h2>Table Stats</h2>
@@ -62,9 +60,9 @@ const KPIS = [
   },
   {
     label: "DB Size",
-    hint: "Total Supabase Postgres database size (all tables and indexes; not Storage buckets).",
+    hint: "Total Supabase Postgres database size (all tables and indexes; not Storage buckets). Max size for free account is 500MB.",
     column: "storage_mb_total",
-    targetValue: 500,
+    targetValue: 350,
     unit: "MB",
     decimals: 1,
   },
@@ -274,7 +272,7 @@ function drawSparkline(canvas, rows, column, target) {
   const wrapStyle = getComputedStyle(wrap);
   const innerW = wrap.clientWidth - parseFloat(wrapStyle.paddingLeft) - parseFloat(wrapStyle.paddingRight);
   const cssW = Math.max(160, innerW || 160);
-  const cssH = 40;
+  const cssH = 60;
   const dpr = window.devicePixelRatio || 1;
   canvas.style.width = cssW + "px";
   canvas.style.height = cssH + "px";
@@ -317,6 +315,13 @@ function drawSparkline(canvas, rows, column, target) {
     ctx.lineTo(cssW - padX, ty);
     ctx.stroke();
     ctx.restore();
+
+    ctx.font = "9px -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.fillStyle = "#9aa3b2";
+    ctx.textAlign = "left";
+    const labelBelow = ty < padY + 9;
+    ctx.textBaseline = labelBelow ? "top" : "bottom";
+    ctx.fillText(Number(target).toLocaleString(), padX + 2, ty + (labelBelow ? 2 : -2));
   }
 
   ctx.beginPath();
@@ -344,6 +349,13 @@ function drawSparkline(canvas, rows, column, target) {
   ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
   ctx.fillStyle = "#4f9cff";
   ctx.fill();
+
+  ctx.font = "10px -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.fillStyle = "#e6e8ec";
+  ctx.textAlign = "right";
+  const labelBelow = ly < padY + 10;
+  ctx.textBaseline = labelBelow ? "top" : "bottom";
+  ctx.fillText(values[values.length - 1].toLocaleString(), lx - 6, ly + (labelBelow ? 6 : -6));
 }
 
 function fmtKpiValue(kpi, n) {
