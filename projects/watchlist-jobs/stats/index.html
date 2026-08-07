@@ -125,6 +125,25 @@ const SECTIONS = [
     }
   },
   {
+    title: "ATS Platforms",
+    href: "ats.html",
+    desc: "Companies and active jobs broken down by ATS platform, with example companies for each.",
+    load: async () => {
+      const { data, error } = await supabaseClient
+        .from("job_stats")
+        .select("ats_count_watchlist_active,ats_count_with_active_jobs,snapshot_date")
+        .order("snapshot_date", { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      if (!data || !data.length) return [{ label: "Status", value: "No captures yet" }];
+      const row = data[0];
+      return [
+        { label: "ATS configured", value: row.ats_count_watchlist_active },
+        { label: "ATS yielding jobs", value: row.ats_count_with_active_jobs },
+      ];
+    }
+  },
+  {
     title: "Watchlist Companies",
     href: "watchlist.html",
     desc: "Every company on the watchlist, its ATS, slug, and active status.",

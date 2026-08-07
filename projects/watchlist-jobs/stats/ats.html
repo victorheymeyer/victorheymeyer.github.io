@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATS Platforms</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+<script defer src="/site-footer.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>ATS Platforms</h1>
+  <div class="sub" id="sub">Loading...</div>
+
+  <div id="errBox"></div>
+
+  <div class="panel" id="summaryPanel" style="display:none">
+    <h2>Summary</h2>
+    <p class="hint">From the latest job_stats snapshot &mdash; see <a href="jobstats.html">Job Stats</a> for the full breakdown.</p>
+    <div class="cards" id="summaryCards"></div>
+  </div>
+
+  <div class="panel" id="breakdownPanel" style="display:none">
+    <h2>Companies and jobs by ATS</h2>
+    <p class="hint">Every ATS platform currently yielding at least one active posting, with company/job counts and a few example companies, derived live from jobs_location_flags.</p>
+    <table>
+      <thead>
+        <tr><th>ATS</th><th style="width:110px">Companies</th><th style="width:110px">Active jobs</th><th>Example companies</th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+      <tfoot id="tfoot"></tfoot>
+    </table>
+  </div>
+
+  <div class="loading" id="loading">Connecting to Supabase...</div>
+
+  <div id="siteFooter"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+const EXAMPLE_COUNT = 3;
+
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function showError(msg) {
+  document.getElementById("errBox").innerHTML =
+    '<div class="err"><strong>Could not load data.</strong><br>' + msg +
+    '<br><br>If this is a permissions error, remember both the RLS <code>select</code> policy for <code>anon</code> AND the table <code>GRANT</code> are needed for reads.</div>';
+}
+
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return d;
+  return (dt.getMonth() + 1) + "/" + dt.getDate() + "/" + dt.getFullYear();
+}
+
+function statCard(label, value) {
+  const n = Number(value);
+  return '<div class="card"><div class="n">' + (isNaN(n) ? "-" : n.toLocaleString()) + '</div><div class="l">' + esc(label) + '</div></div>';
+}
+
+// Same "detect real page size from the first response" approach as
+// top_employers.html -- Supabase caps rows-per-request server-side and
+// silently clamps requestedPageSize, so pagination has to follow whatever
+// the first response actually returned.
+async function fetchAllRows(table, selectCols, applyFilters) {
+  const requestedPageSize = 10000;
+  function buildQuery(withCount) {
+    let q = supabaseClient.from(table).select(selectCols, withCount ? { count: "exact" } : undefined);
+    if (applyFilters) q = applyFilters(q);
+    return q;
+  }
+
+  const first = await buildQuery(true).range(0, requestedPageSize - 1);
+  if (first.error) throw first.error;
+  let all = first.data || [];
+  const total = first.count != null ? first.count : all.length;
+  const actualPageSize = all.length > 0 ? all.length : requestedPageSize;
+
+  if (all.length < total) {
+    const requests = [];
+    for (let from = all.length; from < total; from += actualPageSize) {
+      requests.push(buildQuery(false).range(from, from + actualPageSize - 1));
+    }
+    const results = await Promise.all(requests);
+    for (const r of results) {
+      if (r.error) throw r.error;
+      all = all.concat(r.data || []);
+    }
+  }
+  return all;
+}
+
+async function init() {
+  try {
+    const { data: statsRows, error: statsErr } = await supabaseClient
+      .from("job_stats")
+      .select("snapshot_date,ats_count_watchlist_active,ats_count_with_active_jobs")
+      .order("snapshot_date", { ascending: false })
+      .limit(1);
+    if (statsErr) throw statsErr;
+
+    if (statsRows && statsRows.length) {
+      const row = statsRows[0];
+      document.getElementById("sub").textContent = "Latest snapshot: " + fmtDate(row.snapshot_date);
+      document.getElementById("summaryCards").innerHTML =
+        statCard("ATS configured (active companies)", row.ats_count_watchlist_active) +
+        statCard("ATS yielding active jobs", row.ats_count_with_active_jobs);
+      document.getElementById("summaryPanel").style.display = "";
+    }
+
+    const rows = await fetchAllRows("jobs_location_flags", "watchlist_company,ats_type,display_name");
+
+    const byAts = {};
+    rows.forEach(r => {
+      const key = r.ats_type || "(unknown)";
+      if (!byAts[key]) byAts[key] = { ats: key, jobs: 0, companies: {} };
+      byAts[key].jobs += 1;
+      byAts[key].companies[r.watchlist_company] = r.display_name || r.watchlist_company;
+    });
+
+    const breakdown = Object.values(byAts).map(a => {
+      const names = Object.values(a.companies).sort((x, y) => x.localeCompare(y));
+      return {
+        ats: a.ats,
+        companyCount: names.length,
+        jobs: a.jobs,
+        examples: names.slice(0, EXAMPLE_COUNT),
+      };
+    }).sort((a, b) => b.jobs - a.jobs);
+
+    document.getElementById("tbody").innerHTML = breakdown.map(b =>
+      '<tr>' +
+        '<td>' + esc(b.ats) + '</td>' +
+        '<td>' + b.companyCount.toLocaleString() + '</td>' +
+        '<td>' + b.jobs.toLocaleString() + '</td>' +
+        '<td>' + esc(b.examples.join(", ")) + '</td>' +
+      '</tr>'
+    ).join("");
+
+    const totalCompanies = new Set(rows.map(r => r.watchlist_company)).size;
+    document.getElementById("tfoot").innerHTML =
+      '<tr>' +
+        '<th>Total</th>' +
+        '<th>' + totalCompanies.toLocaleString() + '</th>' +
+        '<th>' + rows.length.toLocaleString() + '</th>' +
+        '<th></th>' +
+      '</tr>';
+    document.getElementById("breakdownPanel").style.display = "";
+
+    document.getElementById("loading").style.display = "none";
+  } catch (err) {
+    document.getElementById("loading").style.display = "none";
+    showError((err && err.message) ? err.message : String(err));
+    console.error(err);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
