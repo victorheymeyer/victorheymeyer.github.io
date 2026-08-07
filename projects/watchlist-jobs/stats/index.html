@@ -14,7 +14,8 @@
   <div id="errBox"></div>
 
   <h2>Key Metrics</h2>
-  <div class="sub">Targets for Sept 2026.</div>
+  <div class="sub" id="kpiAsOf"></div>
+  <div class="sub" id="kpiTargetsMonth"></div>
   <div id="kpiSection"></div>
 
   <h2>Other Stats</h2>
@@ -35,6 +36,17 @@ const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+// KPI chart x-axis always spans the current calendar month (Seattle-day
+// boundary), 1st through the last day, regardless of how much data exists.
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const seattleParts = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit"
+}).formatToParts(new Date());
+const CUR_YEAR = Number(seattleParts.find(p => p.type === "year").value);
+const CUR_MONTH = Number(seattleParts.find(p => p.type === "month").value); // 1-indexed
+const DAYS_IN_MONTH = new Date(CUR_YEAR, CUR_MONTH, 0).getDate();
+const FIRST_OF_MONTH = CUR_YEAR + "-" + String(CUR_MONTH).padStart(2, "0") + "-01";
 
 // KPI row: full-width headline stat + trend sparkline, sourced from job_stats
 // history. Add an entry (label, hint, column, targetValue, and optionally
@@ -64,10 +76,11 @@ const KPIS = [
     column: "storage_mb_total",
     targetValue: 350,
     unit: "MB",
-    decimals: 1,
+    decimals: 0,
   },
 ];
 const kpiCharts = [];
+let kpiAsOfDate = null;
 
 // One entry per page in this stats/ folder. Add a new entry (title, href,
 // desc, and a load() that returns [{label, value}, ...]) when a new
@@ -224,6 +237,13 @@ function fmtDate(d) {
   return (dt.getMonth() + 1) + "/" + dt.getDate() + "/" + dt.getFullYear();
 }
 
+function fmtMonthYear(d) {
+  if (!d) return "";
+  const dt = new Date(d + "T00:00:00");
+  if (isNaN(dt)) return d;
+  return MONTH_NAMES[dt.getMonth()] + " " + dt.getFullYear();
+}
+
 async function loadTableStats(tableName) {
   const { data, error } = await supabaseClient
     .from("table_stats").select("captured_date,row_count,total_bytes,dead_tuples,captured_at")
@@ -281,12 +301,20 @@ async function loadKpiHistory(column) {
     .select("snapshot_date," + column)
     .order("snapshot_date", { ascending: true })
     .not(column, "is", null)
-    .limit(400);
+    .gte("snapshot_date", FIRST_OF_MONTH)
+    .limit(31);
   if (error) throw error;
   return data || [];
 }
 
-function drawSparkline(canvas, rows, column, target) {
+function fmtChartValue(n, decimals) {
+  const opts = decimals != null
+    ? { minimumFractionDigits: decimals, maximumFractionDigits: decimals }
+    : undefined;
+  return Number(n).toLocaleString(undefined, opts);
+}
+
+function drawSparkline(canvas, rows, column, target, decimals) {
   const wrap = canvas.parentElement;
   const wrapStyle = getComputedStyle(wrap);
   const innerW = wrap.clientWidth - parseFloat(wrapStyle.paddingLeft) - parseFloat(wrapStyle.paddingRight);
@@ -301,30 +329,44 @@ function drawSparkline(canvas, rows, column, target) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
 
+  const padX = 4, padTop = 6, padBottom = 6, axisLabelH = 11;
+  const plotW = cssW - padX * 2, plotH = cssH - padTop - padBottom - axisLabelH;
+  const baselineY = padTop + plotH;
+  const axisLabelY = cssH - 2;
+  const monthName = MONTH_NAMES[CUR_MONTH - 1];
+
+  ctx.font = "9px -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.fillStyle = "#9aa3b2";
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+  ctx.fillText(monthName + " 1", padX, axisLabelY);
+  ctx.textAlign = "right";
+  ctx.fillText(monthName + " " + DAYS_IN_MONTH, cssW - padX, axisLabelY);
+
   if (rows.length < 2) {
-    ctx.fillStyle = "#9aa3b2";
     ctx.font = "12px -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("Not enough history yet", cssW / 2, cssH / 2);
+    ctx.fillText("Not enough history yet", cssW / 2, padTop + plotH / 2);
     return;
   }
 
-  const padX = 4, padY = 6;
-  const plotW = cssW - padX * 2, plotH = cssH - padY * 2;
   const values = rows.map(r => Number(r[column]));
-  const min = 0;
-  let max = Math.max(...values);
-  if (target != null) max = Math.max(max, target);
+  const dayX = (day) => padX + ((day - 1) / (DAYS_IN_MONTH - 1)) * plotW;
+  let min = Math.min(...values), max = Math.max(...values);
+  if (target != null) {
+    min = Math.min(min, target);
+    max = Math.max(max, target);
+  }
   const range = max - min || 1;
 
-  const points = values.map((v, i) => [
-    padX + (i / (values.length - 1)) * plotW,
-    padY + plotH - ((v - min) / range) * plotH,
+  const points = rows.map((r, i) => [
+    dayX(Number(r.snapshot_date.slice(8, 10))),
+    padTop + plotH - ((values[i] - min) / range) * plotH,
   ]);
 
   if (target != null) {
-    const ty = padY + plotH - ((target - min) / range) * plotH;
+    const ty = padTop + plotH - ((target - min) / range) * plotH;
     ctx.save();
     ctx.setLineDash([3, 2]);
     ctx.strokeStyle = "rgba(154, 163, 178, 0.6)";
@@ -338,15 +380,15 @@ function drawSparkline(canvas, rows, column, target) {
     ctx.font = "9px -apple-system, Segoe UI, Roboto, sans-serif";
     ctx.fillStyle = "#9aa3b2";
     ctx.textAlign = "left";
-    const labelBelow = ty < padY + 9;
+    const labelBelow = ty < padTop + 9;
     ctx.textBaseline = labelBelow ? "top" : "bottom";
-    ctx.fillText(Number(target).toLocaleString(), padX + 2, ty + (labelBelow ? 2 : -2));
+    ctx.fillText(fmtChartValue(target, decimals), padX + 2, ty + (labelBelow ? 2 : -2));
   }
 
   ctx.beginPath();
-  ctx.moveTo(points[0][0], cssH - padY);
+  ctx.moveTo(points[0][0], baselineY);
   points.forEach(([x, y]) => ctx.lineTo(x, y));
-  ctx.lineTo(points[points.length - 1][0], cssH - padY);
+  ctx.lineTo(points[points.length - 1][0], baselineY);
   ctx.closePath();
   ctx.fillStyle = "rgba(79, 156, 255, 0.10)";
   ctx.fill();
@@ -372,9 +414,9 @@ function drawSparkline(canvas, rows, column, target) {
   ctx.font = "10px -apple-system, Segoe UI, Roboto, sans-serif";
   ctx.fillStyle = "#e6e8ec";
   ctx.textAlign = "right";
-  const labelBelow = ly < padY + 10;
+  const labelBelow = ly < padTop + 10;
   ctx.textBaseline = labelBelow ? "top" : "bottom";
-  ctx.fillText(values[values.length - 1].toLocaleString(), lx - 6, ly + (labelBelow ? 6 : -6));
+  ctx.fillText(fmtChartValue(values[values.length - 1], decimals), lx - 6, ly + (labelBelow ? 6 : -6));
 }
 
 function fmtKpiValue(kpi, n) {
@@ -415,11 +457,19 @@ async function renderKpi(kpi) {
     const rows = await loadKpiHistory(kpi.column);
     const latest = rows.length ? Number(rows[rows.length - 1][kpi.column]) : null;
     valueEl.textContent = fmtKpiValue(kpi, latest);
+    if (rows.length) {
+      const latestDate = rows[rows.length - 1].snapshot_date;
+      if (!kpiAsOfDate || latestDate > kpiAsOfDate) {
+        kpiAsOfDate = latestDate;
+        document.getElementById("kpiAsOf").textContent = "As of " + fmtDate(kpiAsOfDate);
+        document.getElementById("kpiTargetsMonth").textContent = "Targets for " + fmtMonthYear(kpiAsOfDate) + ".";
+      }
+    }
     pctEl.textContent = (latest != null && kpi.targetValue)
       ? Math.round((latest / kpi.targetValue) * 100) + "%"
       : "-";
-    kpiCharts.push({ canvas, rows, column: kpi.column, target: kpi.targetValue });
-    drawSparkline(canvas, rows, kpi.column, kpi.targetValue);
+    kpiCharts.push({ canvas, rows, column: kpi.column, target: kpi.targetValue, decimals: kpi.decimals });
+    drawSparkline(canvas, rows, kpi.column, kpi.targetValue, kpi.decimals);
   } catch (err) {
     valueEl.textContent = "-";
     pctEl.textContent = "-";
@@ -455,7 +505,7 @@ SECTIONS.forEach(renderSection);
 TABLES.forEach(renderTable);
 
 window.addEventListener("resize", () => {
-  kpiCharts.forEach(k => drawSparkline(k.canvas, k.rows, k.column, k.target));
+  kpiCharts.forEach(k => drawSparkline(k.canvas, k.rows, k.column, k.target, k.decimals));
 });
 </script>
 </body>
