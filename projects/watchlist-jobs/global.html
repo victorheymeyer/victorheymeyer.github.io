@@ -55,7 +55,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","display_name","ats_id","title","location",
   "posted_at","url","apply_url","maybe_wa","maybe_remote_wa",
-  "discipline","role_keyword","level"
+  "discipline","role_keyword","level","days_old","days_old_estimated"
 ].join(",");
 
 const state = {
@@ -121,16 +121,6 @@ function fmtDate(d) {
   const dt = new Date(d);
   if (isNaN(dt)) return d;
   return dt.toISOString().slice(0, 10);
-}
-
-// Days since posted_at (the source's claim). Returns null when posted_at is absent or unparseable.
-function daysOld(posted) {
-  if (!posted) return null;
-  const d = new Date(posted);
-  if (isNaN(d)) return null;
-  const ms = Date.now() - d.getTime();
-  if (ms < 0) return 0;
-  return Math.floor(ms / 86400000);
 }
 
 // ---- Data load ----
@@ -331,7 +321,7 @@ function applyFilters() {
 function renderTable() {
   const filtered = applyFilters();
   filtered.sort((a, b) => {
-    const da = daysOld(a.posted_at), db = daysOld(b.posted_at);
+    const da = a.days_old, db = b.days_old;
     if (da == null && db == null) return 0;
     if (da == null) return 1;
     if (db == null) return -1;
@@ -354,13 +344,14 @@ function renderTable() {
     const badges =
       (r.maybe_wa ? '<span class="badge wa">WA</span>' : "") +
       (r.maybe_remote_wa ? '<span class="badge rem">Remote</span>' : "");
-    const dOld = daysOld(r.posted_at);
+    const dOld = r.days_old;
+    const dOldTitle = r.days_old_estimated ? "posted_at unavailable for this source; estimated from first_seen" : "";
     const tr = document.createElement("tr");
     tr.innerHTML =
       '<td class="company">' + esc(r.display_name || r.watchlist_company) + '</td>' +
       '<td title="' + esc(r.title || "") + '">' + esc(r.title || "(no title)") + badges + '</td>' +
       '<td class="loc" title="' + esc(r.location || "") + '">' + esc(r.location || "") + '</td>' +
-      '<td class="loc">' + (dOld == null ? "-" : dOld) + '</td>' +
+      '<td class="loc" title="' + esc(dOldTitle) + '">' + (dOld == null ? "-" : (dOld + (r.days_old_estimated ? "*" : ""))) + '</td>' +
       '<td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">view</a>' : "") + '</td>';
     tbody.appendChild(tr);
   });

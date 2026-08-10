@@ -23,16 +23,6 @@
     return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(dt);
   }
 
-  // Days since a date string, or null when absent/unparseable (mirrors the
-  // daysOld() helper each host page keeps for its own Days Old filter).
-  function daysOld(d) {
-    if (!d) return null;
-    const dt = new Date(d);
-    if (isNaN(dt)) return null;
-    const ms = Date.now() - dt.getTime();
-    return ms < 0 ? 0 : Math.floor(ms / 86400000);
-  }
-
   // Suffix so a $45-65 hourly rate can't be misread as an annual salary.
   const SALARY_PERIOD_SUFFIX = { HOUR: "/hr", DAY: "/day", WEEK: "/wk", MONTH: "/mo", YEAR: "/yr" };
 
@@ -136,10 +126,7 @@
     const descChangeCount = r.description_change_count != null ? r.description_change_count : "-";
     const postStatus = r.post_status ? esc(r.post_status) : "unclassified";
     const daysOldSuffix = !r.post_status
-      ? (() => {
-          const age = daysOld(r.posted_at) != null ? daysOld(r.posted_at) : daysOld(r.first_seen);
-          return age != null ? ", Days Old: " + age : "";
-        })()
+      ? (r.days_old != null ? ", Days Old: " + r.days_old + (r.days_old_estimated ? "*" : "") : "")
       : "";
 
     const disc = r.discipline ? esc(r.discipline) : "-";
