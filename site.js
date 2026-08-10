@@ -9,7 +9,7 @@
     { label: "My Criteria", href: "/projects/watchlist-jobs/my-criteria.html" },
     { divider: true },
     { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },
-    { label: "Global", href: "/projects/watchlist-jobs/global.html" },
+    { label: "All", href: "/projects/watchlist-jobs/global.html" },
     { label: "Stats", href: "/projects/watchlist-jobs/stats/index.html" },
     { divider: true },
     { label: "About", href: "/projects/watchlist-jobs/about.html" }

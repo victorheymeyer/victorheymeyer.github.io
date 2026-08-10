@@ -11,7 +11,7 @@
 <body>
 <div id="siteNav"></div>
 <div class="wrap">
-  <h1>Watchlist Jobs (Global)</h1>
+  <h1>All Companies and Locations (No Description or details)</h1>
   <div class="sub" id="sub">Loading the latest snapshot...</div>
 
   <div id="errBox"></div>
@@ -21,7 +21,7 @@
   <div class="panel" id="listPanel" style="display:none">
     <div class="controls">
       <input type="text" id="search" placeholder="Search title, company, or location">
-      <select id="companySel"><option value="">All companies</option></select>
+      <div class="msdd" id="companyDD"></div>
       <div class="msdd" id="disciplineDD"></div>
       <div class="msdd" id="roleDD"></div>
       <div class="msdd" id="levelDD"></div>
@@ -53,7 +53,7 @@ const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
 
 const LIST_COLUMNS = [
-  "snapshot_date","watchlist_company","ats_id","title","location",
+  "snapshot_date","watchlist_company","display_name","ats_id","title","location",
   "posted_at","url","apply_url","maybe_wa","maybe_remote_wa",
   "discipline","role_keyword","level"
 ].join(",");
@@ -177,10 +177,7 @@ function render() {
     card(rem, "Remote-WA Jobs");
 
   // company dropdown
-  const sel = document.getElementById("companySel");
-  const companies = Array.from(new Set(state.rows.map(r => r.watchlist_company))).sort();
-  sel.innerHTML = '<option value="">All companies</option>' +
-    companies.map(c => '<option value="' + c + '">' + c + '</option>').join("");
+  buildCompanyDropdown();
 
   // classifier multi-selects (OR within a dropdown, AND across dropdowns; "(unclassified)" matches nulls)
   buildMultiSelect("disciplineDD", "discipline", "discipline", "All disciplines");
@@ -195,6 +192,68 @@ function render() {
 
 function card(n, l) {
   return '<div class="card"><div class="n">' + Number(n).toLocaleString() + '</div><div class="l">' + l + '</div></div>';
+}
+
+// Searchable single-select company dropdown (button + panel with a filter box).
+function buildCompanyDropdown() {
+  const companyNames = new Map();
+  state.rows.forEach(r => {
+    if (!companyNames.has(r.watchlist_company)) companyNames.set(r.watchlist_company, r.display_name || r.watchlist_company);
+  });
+  const companies = Array.from(companyNames.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+
+  const container = document.getElementById("companyDD");
+  container.innerHTML =
+    '<button type="button" class="msdd-btn"></button>' +
+    '<div class="msdd-panel" hidden>' +
+      '<input type="text" class="msdd-search" placeholder="Search companies...">' +
+      '<div class="msdd-opt" data-value="">All companies</div>' +
+      companies.map(([slug, name]) => '<div class="msdd-opt" data-value="' + esc(slug) + '">' + esc(name) + '</div>').join("") +
+    '</div>';
+
+  const btn = container.querySelector(".msdd-btn");
+  const panel = container.querySelector(".msdd-panel");
+  const searchInput = panel.querySelector(".msdd-search");
+  const opts = Array.from(panel.querySelectorAll(".msdd-opt"));
+
+  function updateLabel() {
+    const name = state.filters.company ? (companyNames.get(state.filters.company) || state.filters.company) : "";
+    btn.textContent = (name || "All companies") + " ▾";
+    btn.classList.toggle("active", !!state.filters.company);
+  }
+  updateLabel();
+
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    document.querySelectorAll(".msdd-panel").forEach(p => { if (p !== panel) p.hidden = true; });
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) {
+      searchInput.value = "";
+      opts.forEach(o => { o.style.display = ""; });
+      searchInput.focus();
+    }
+  };
+  panel.onclick = (e) => e.stopPropagation();
+  searchInput.oninput = () => {
+    const q = searchInput.value.trim().toLowerCase();
+    opts.forEach(o => {
+      if (o.dataset.value === "") return;
+      o.style.display = o.textContent.toLowerCase().includes(q) ? "" : "none";
+    });
+  };
+  opts.forEach(o => {
+    o.onclick = () => {
+      state.filters.company = o.dataset.value;
+      state.page = 1;
+      panel.hidden = true;
+      updateLabel();
+      renderTable();
+    };
+  });
+  container._reset = () => {
+    state.filters.company = "";
+    updateLabel();
+  };
 }
 
 const UNCLASSIFIED = "__unclassified__";
@@ -262,7 +321,7 @@ function applyFilters() {
       if (!ok) return false;
     }
     if (q) {
-      const hay = ((r.title || "") + " " + (r.watchlist_company || "") + " " + (r.location || "")).toLowerCase();
+      const hay = ((r.title || "") + " " + (r.display_name || r.watchlist_company || "") + " " + (r.location || "")).toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -298,7 +357,7 @@ function renderTable() {
     const dOld = daysOld(r.posted_at);
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td class="company">' + esc(r.watchlist_company) + '</td>' +
+      '<td class="company">' + esc(r.display_name || r.watchlist_company) + '</td>' +
       '<td title="' + esc(r.title || "") + '">' + esc(r.title || "(no title)") + badges + '</td>' +
       '<td class="loc" title="' + esc(r.location || "") + '">' + esc(r.location || "") + '</td>' +
       '<td class="loc">' + (dOld == null ? "-" : dOld) + '</td>' +
@@ -351,17 +410,15 @@ function renderPager(total, pages) {
 function wireControls() {
   const search = document.getElementById("search");
   search.oninput = () => { state.filters.search = search.value; state.page = 1; renderTable(); };
-  const sel = document.getElementById("companySel");
-  sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); };
   document.getElementById("waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); };
   document.getElementById("clearBtn").onclick = () => {
     state.filters = { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [] };
     state.page = 1;
-    search.value = ""; sel.value = "";
+    search.value = "";
     document.getElementById("waChk").checked = false;
     document.getElementById("remChk").checked = false;
-    ["disciplineDD", "roleDD", "levelDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
+    ["companyDD", "disciplineDD", "roleDD", "levelDD"].forEach(id => { const c = document.getElementById(id); if (c && c._reset) c._reset(); });
     renderTable();
   };
   // close any open dropdown when clicking elsewhere
