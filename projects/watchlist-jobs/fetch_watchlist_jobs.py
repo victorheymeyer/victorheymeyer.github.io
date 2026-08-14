@@ -180,20 +180,20 @@ def augment_location(location, raw):
     return "; ".join(parts) if parts else location
 # -----------------------------------------------------------------------------
 
-# --- Discipline classification (v6 - inside Title_Role_Rules_v7) -----------------------------------
+# --- Area classification (v6 - inside Title_Role_Rules_v7) -----------------------------------
 # V6: Split Project/Program Management into separate Program Management and
-#     Project Management disciplines (mirrors the Program Manager / Project
+#     Project Management areas (mirrors the Program Manager / Project
 #     Manager role split in ROLE_RULES).
 # V5: Added Communications and removed some of the Marketing rules into Comms
 # V4: Below
-# Maps a job title to one of 25 disciplines (craft/training, not org unit).
+# Maps a job title to one of 25 areas (craft/training, not org unit).
 # Ordered rules, first match wins: specific/technical craft is matched before
 # broad seniority words; Engineering (engineer/architect) precedes the
 # blue-collar buckets; two late catch-alls ("analyst" -> Data & Analytics,
 # "specialist" -> Customer Success) only fire when nothing domain-specific hit.
 # Re-run every load so rule changes self-heal existing rows on the next pull.
 
-_DISCIPLINE_RULES = [
+_AREA_RULES = [
     ("Communications", r"\b(communications|\bcomms\b|public relations|\bpr\b|media relations|press secretary|press officer|publicist|spokesperson|speechwriter|public affairs|corporate affairs)\b", r"\bengineer\b|engineering manager|engineering lead|telecommunications|unified communications|solutions architect|communications security|data analyst|brand design|program manager|project manager|product manager"),
     ("Engineering", r"\b(engineer|engineering|architect|developer|\bsre\b|devops|firmware|technical lead|software|\bswe\b|penetration tester|propulsion analyst|thermal analyst)\b", None),
     ("Research", r"\b(research scientist|research engineer|researcher|applied scientist|research fellow|research intern|research lead|research manager|economist|ml researcher|ai researcher|machine learning researcher|postdoc|quantitative researcher|psychologist|fellows program|frontier agents intern)\b", None),
@@ -225,17 +225,17 @@ _DISCIPLINE_RULES = [
 
 
 
-_DISCIPLINE_COMPILED = [
+_AREA_COMPILED = [
     (d, re.compile(p, re.I), re.compile(n, re.I) if n else None)
-    for d, p, n in _DISCIPLINE_RULES
+    for d, p, n in _AREA_RULES
 ]
 
 
-def classify_discipline(title):
+def classify_area(title):
     t = title or ""
-    for discipline, pos, neg in _DISCIPLINE_COMPILED:
+    for area, pos, neg in _AREA_COMPILED:
         if pos.search(t) and not (neg and neg.search(t)):
-            return discipline
+            return area
     return "Other"
 # -----------------------------------------------------------------------------
 
@@ -395,7 +395,7 @@ def classify_role(title):
 
 # --- Level classification (frozen v1) ----------------------------------------
 # Maps a job title to a seniority/level value, an axis independent of
-# discipline and role. Ordered rules, first match wins. Each rule lists one or
+# area and role. Ordered rules, first match wins. Each rule lists one or
 # two patterns; multiple patterns must ALL match (AND, used for "Senior +
 # word" combos so word order/adjacency doesn't matter). Titles are normalized
 # (Sr./Sr/Snr/Snr. -> Senior) before classification, but the normalized string
@@ -466,7 +466,7 @@ snapshot_date = datetime.now(SEATTLE_TZ).date().isoformat()
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "title", "location", "posted_at",
              "description_hash", "hash_algo"]
 DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "description",
-            "url", "apply_url", "last_seen", "fetched_at", "discipline", "role_keyword",
+            "url", "apply_url", "last_seen", "fetched_at", "area", "role_keyword",
             "level", "raw", "description_change_count",
             "description_last_change_chars", "description_plain_len", "requisition_id",
             "ats_type", "is_remote", "team", "employment_type",
@@ -676,8 +676,8 @@ def main():
                 # storage-ready natively, no second fetch or html_map merge
                 # needed.
 
-                # Classify discipline from title (frozen v4 rules).
-                d["discipline"] = classify_discipline(d.get("title"))
+                # Classify area from title (frozen v4 rules).
+                d["area"] = classify_area(d.get("title"))
 
                 # Classify role archetype from title (Title_Role_Rules v4).
                 d["role_keyword"] = classify_role(d.get("title"))

@@ -6,7 +6,7 @@
   <img src="images/Jobs-Tracker-Pipeline-Basic.png" alt="Daily job pipeline: from company watchlist to a ranked daily digest" width="800">
 </div>
 
-**Technical Summary:** A Python loader pulls each company's live board once a day, normalizes the postings, and writes a dated snapshot to Supabase. Titles are auto-classified by discipline, role, and seniority level. A GitHub Actions cron job runs the loader daily.
+**Technical Summary:** A Python loader pulls each company's live board once a day, normalizes the postings, and writes a dated snapshot to Supabase. Titles are auto-classified by area, role, and seniority level. A GitHub Actions cron job runs the loader daily.
 
 ----------------------------------------------------------------------------------------------------------
 

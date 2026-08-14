@@ -29,7 +29,7 @@
     <div class="controls">
       <input type="text" id="search" placeholder="Search title, company, location, or department">
       <select id="companySel"><option value="">All companies</option></select>
-      <div class="msdd" id="disciplineDD"></div>
+      <div class="msdd" id="areaDD"></div>
       <div class="msdd" id="roleDD"></div>
       <div class="msdd" id="levelDD"></div>
       <label class="chk"><input type="checkbox" id="waChk" checked> WA Jobs</label>
@@ -56,19 +56,19 @@ const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
   "department","team","employment_type","is_remote","salary_min","salary_max","salary_currency","salary_period",
   "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
-  "discipline","role_keyword","level","description_last_change","description_change_count","post_status",
+  "area","role_keyword","level","description_last_change","description_change_count","post_status",
   "is_new_company","days_old","days_old_estimated"
 ].join(",");
 
 // Sentinel value for the "(unclassified)" option in the classifier dropdowns
-// (matches rows where discipline/role_keyword/level is null). Declared here,
+// (matches rows where area/role_keyword/level is null). Declared here,
 // ahead of its other use in buildMultiSelect()/classifierMatch() below.
 const UNCLASSIFIED = "__unclassified__";
 
 // Default filter view for this page: new (or new-because-new-company) roles,
 // with genuinely new companies excluded, restricted to WA/remote-WA jobs.
 function defaultFilters() {
-  return { company: "", wa: true, remote: true, search: "", discipline: [], role: [], level: [] };
+  return { company: "", wa: true, remote: true, search: "", area: [], role: [], level: [] };
 }
 
 const state = {
@@ -214,7 +214,7 @@ function render() {
     companies.map(([slug, name]) => '<option value="' + JobDetail.esc(slug) + '">' + JobDetail.esc(name) + '</option>').join("");
 
   // classifier multi-selects (OR within a dropdown, AND across dropdowns; "(unclassified)" matches nulls)
-  buildMultiSelect("disciplineDD", "discipline", "discipline", "All disciplines");
+  buildMultiSelect("areaDD", "area", "area", "All areas");
   buildMultiSelect("roleDD", "role_keyword", "role", "All roles");
   buildMultiSelect("levelDD", "level", "level", "All levels");
 
@@ -310,7 +310,7 @@ function applyFilters() {
     // Status is fixed to New/New* for this page, not a user-adjustable filter.
     if (r.post_status !== "New" && r.post_status !== "New*") return false;
     if (f.company && r.watchlist_company !== f.company) return false;
-    if (!classifierMatch(f.discipline, r.discipline)) return false;
+    if (!classifierMatch(f.area, r.area)) return false;
     if (!classifierMatch(f.role, r.role_keyword)) return false;
     if (!classifierMatch(f.level, r.level)) return false;
     // Exclude jobs that only look new because their company was just added to the watchlist.

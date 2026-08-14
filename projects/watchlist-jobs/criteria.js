@@ -18,11 +18,11 @@
 
   const LOCAL_STORAGE_KEY = "watchlist_filters";
   // Sentinel for the "(unclassified)" option in classifier checklists/dropdowns
-  // (matches rows where discipline/role_keyword/level is null).
+  // (matches rows where area/role_keyword/level is null).
   const UNCLASSIFIED = "__unclassified__";
 
   function defaultFilters() {
-    return { company: "", wa: false, remote: false, search: "", discipline: [], role: [], level: [], daysOld: [], postStatus: [], newCompany: false };
+    return { company: "", wa: false, remote: false, search: "", area: [], role: [], level: [], daysOld: [], postStatus: [], newCompany: false };
   }
 
   // Merge a saved blob over the default shape so a blob missing a key (or an
@@ -37,7 +37,7 @@
       if (typeof saved.wa === "boolean") merged.wa = saved.wa;
       if (typeof saved.remote === "boolean") merged.remote = saved.remote;
       if (typeof saved.search === "string") merged.search = saved.search;
-      if (Array.isArray(saved.discipline)) merged.discipline = saved.discipline.slice();
+      if (Array.isArray(saved.area)) merged.area = saved.area.slice();
       if (Array.isArray(saved.role)) merged.role = saved.role.slice();
       if (Array.isArray(saved.level)) merged.level = saved.level.slice();
     }
@@ -48,7 +48,7 @@
     return {
       v: 1,
       company: filters.company, wa: filters.wa, remote: filters.remote, search: filters.search,
-      discipline: filters.discipline, role: filters.role, level: filters.level
+      area: filters.area, role: filters.role, level: filters.level
     };
   }
 
@@ -127,8 +127,16 @@
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (raw) {
       try {
-        state.loadedFilters = mergeFilters(JSON.parse(raw));
+        const parsed = JSON.parse(raw);
+        state.loadedFilters = mergeFilters(parsed);
         state.uiState = "local";
+        // One-time cleanup: the "discipline" filter was renamed to "area"
+        // and intentionally has no read fallback (old selections are meant
+        // to be dropped, not carried over) - rewrite the blob now so the
+        // stale key doesn't linger in localStorage indefinitely.
+        if (parsed && typeof parsed === "object" && "discipline" in parsed) {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(persistedBlob(state.loadedFilters)));
+        }
       } catch (err) {
         // corrupt/foreign blob under this key; ignore and fall through to empty.
       }
@@ -152,7 +160,7 @@
   // The one explicit write path: signed-in upserts the row, guest writes
   // localStorage. `filters` must be a complete filters object (all seven
   // persisted keys) - a caller that only edits a subset (e.g. My Criteria's
-  // discipline/role/level/wa/remote form) must merge onto state.loadedFilters
+  // area/role/level/wa/remote form) must merge onto state.loadedFilters
   // first so fields it doesn't render (company/search) aren't lost.
   async function saveCriteria(filters) {
     const payload = persistedBlob(filters);

@@ -129,7 +129,7 @@
       ? (r.days_old != null ? ", Days Old: " + r.days_old + (r.days_old_estimated ? "*" : "") : "")
       : "";
 
-    const disc = r.discipline ? esc(r.discipline) : "-";
+    const area = r.area ? esc(r.area) : "-";
     const roleKw = r.role_keyword ? esc(r.role_keyword) : "-";
     const lvl = r.level ? esc(r.level) : "-";
 
@@ -141,7 +141,7 @@
       '<div class="metaline"><span class="lbl">Job Info:</span> Dept: ' + dept +
         ' | Team: ' + team +
         ' | Location: <span class="locval">' + locationBlock(location) + '</span></div>' +
-      '<div class="metaline"><span class="lbl">Classification:</span> Discipline: ' + disc +
+      '<div class="metaline"><span class="lbl">Classification:</span> Area: ' + area +
         ' | Role: ' + roleKw +
         ' | Level: ' + lvl + '</div>' +
       '<div class="metaline"><span class="lbl">Dates:</span> Posted: ' + posted +

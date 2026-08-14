@@ -36,9 +36,9 @@
       </div>
 
       <div class="criteria-group">
-        <div class="criteria-group-label">Discipline / Area</div>
+        <div class="criteria-group-label">Area</div>
         <hr class="criteria-divider">
-        <div class="criteria-opt-list cols-3" id="disciplineList"></div>
+        <div class="criteria-opt-list cols-3" id="areaList"></div>
       </div>
       <div class="criteria-group">
         <div class="criteria-group-label">Level</div>
@@ -58,7 +58,7 @@
   <div class="panel">
     <h2>Detailed Logic</h2>
     <ul class="hint">
-      <li>Within a category (Discipline, Role, Level, Post Status, Days Old): checking multiple boxes is OR — matches any of them.</li>
+      <li>Within a category (Area, Role, Level, Post Status, Days Old): checking multiple boxes is OR — matches any of them.</li>
       <li>Across categories, plus Company, WA, Remote-WA, and Search: it's AND — a job must satisfy every filter you've set.</li>
       <li>WA vs Remote-WA is the one exception: if you check either (or both), a job matches if it satisfies either one (it's an OR between those two, then ANDed with everything else).</li>
       <li>Search is a plain substring match across title/company/location/department.</li>
@@ -81,7 +81,7 @@ function esc(s) {
 // request tells us the real per-request cap and total count, then any
 // remaining pages fire in parallel. Only three narrow columns here (not the
 // dashboard's full row shape) since all this page needs is the distinct
-// discipline/role/level values actually present in the latest snapshot.
+// area/role/level values actually present in the latest snapshot.
 async function fetchAllRows(table, selectCols, applyFilters) {
   const requestedPageSize = 10000;
   function buildQuery(withCount) {
@@ -186,7 +186,7 @@ function renderSavedSummary() {
   const items = [];
   if (saved.wa) items.push("WA Jobs");
   if (saved.remote) items.push("Remote-WA Jobs");
-  if (saved.discipline.length) items.push("Discipline: " + saved.discipline.map(v => esc(displayValue(v))).join(", "));
+  if (saved.area.length) items.push("Area: " + saved.area.map(v => esc(displayValue(v))).join(", "));
   if (saved.role.length) items.push("Role: " + saved.role.map(v => esc(displayValue(v))).join(", "));
   if (saved.level.length) items.push("Level: " + saved.level.map(v => esc(displayValue(v))).join(", "));
   el.innerHTML = items.length ? items.map(i => "<li>" + i + "</li>").join("") : "<li>None</li>";
@@ -222,7 +222,7 @@ function renderChecklist(containerId, key, values, hasNull, columns) {
 }
 
 // Renders Role as sub-headed groups (see ROLE_BUCKETS) flowing into CSS
-// columns, instead of one flat grid like Discipline/Level - only values
+// columns, instead of one flat grid like Area/Level - only values
 // actually present in the data are shown, in bucket order.
 function renderRoleChecklist(values, hasNull) {
   const el = document.getElementById("roleList");
@@ -245,7 +245,7 @@ function renderRoleChecklist(values, hasNull) {
 }
 
 function renderForm(classifiers) {
-  renderChecklist("disciplineList", "discipline", classifiers.discipline.values, classifiers.discipline.hasNull, 3);
+  renderChecklist("areaList", "area", classifiers.area.values, classifiers.area.hasNull, 3);
   renderRoleChecklist(classifiers.role.values, classifiers.role.hasNull);
   renderChecklist("levelList", "level", classifiers.level.values, classifiers.level.hasNull, 3);
 
@@ -273,16 +273,16 @@ async function main() {
     if (!latest.data || !latest.data.length) throw new Error("No snapshot data found.");
     const snapshotDate = latest.data[0].snapshot_date;
 
-    const rows = await fetchAllRows("jobs_location_flags", "discipline, role_keyword, level", (q) => q.eq("snapshot_date", snapshotDate));
+    const rows = await fetchAllRows("jobs_location_flags", "area, role_keyword, level", (q) => q.eq("snapshot_date", snapshotDate));
     const classifiers = {
-      discipline: distinctValues(rows, "discipline"),
+      area: distinctValues(rows, "area"),
       role: distinctValues(rows, "role_keyword"),
       level: distinctValues(rows, "level")
     };
     classifiers.level.values = orderByFixedList(classifiers.level.values, LEVEL_ORDER);
 
     const loaded = Criteria.state.loadedFilters;
-    formState.discipline = loaded.discipline.slice();
+    formState.area = loaded.area.slice();
     formState.role = loaded.role.slice();
     formState.level = loaded.level.slice();
     formState.wa = loaded.wa;
@@ -305,7 +305,7 @@ async function main() {
         // object, so company/search (set elsewhere, on the My Jobs
         // dashboard) survive a save made from this page.
         const merged = Object.assign({}, Criteria.state.loadedFilters, {
-          discipline: formState.discipline.slice(),
+          area: formState.area.slice(),
           role: formState.role.slice(),
           level: formState.level.slice(),
           wa: formState.wa,

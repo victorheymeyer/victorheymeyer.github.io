@@ -25,12 +25,12 @@
       <div class="controls" style="display:none">
         <input type="text" class="search" placeholder="Search title, company, location, or department">
         <select class="companySel"><option value="">All companies</option></select>
-        <div class="msdd" data-key="discipline"></div>
+        <div class="msdd" data-key="area"></div>
         <div class="msdd" data-key="role"></div>
         <div class="msdd" data-key="level"></div>
         <div class="msdd" data-key="daysOld"></div>
         <div class="msdd" data-key="postStatus"></div>
-        <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level values from your saved criteria">Apply Saved Criteria</button>
+        <button class="clearbtn" data-action="preset" title="Apply the Area / Role / Level values from your saved criteria">Apply Saved Criteria</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
         <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" class="newCoChk"> Exclude new companies</label>
@@ -59,12 +59,12 @@
       <div class="controls" style="display:none">
         <input type="text" class="search" placeholder="Search title, company, location, or department">
         <select class="companySel"><option value="">All companies</option></select>
-        <div class="msdd" data-key="discipline"></div>
+        <div class="msdd" data-key="area"></div>
         <div class="msdd" data-key="role"></div>
         <div class="msdd" data-key="level"></div>
         <div class="msdd" data-key="daysOld"></div>
         <div class="msdd" data-key="postStatus"></div>
-        <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level values from your saved criteria">Apply Saved Criteria</button>
+        <button class="clearbtn" data-action="preset" title="Apply the Area / Role / Level values from your saved criteria">Apply Saved Criteria</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
         <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" class="newCoChk"> Exclude new companies</label>
@@ -92,12 +92,12 @@
       <div class="controls">
         <input type="text" class="search" placeholder="Search title, company, location, or department">
         <select class="companySel"><option value="">All companies</option></select>
-        <div class="msdd" data-key="discipline"></div>
+        <div class="msdd" data-key="area"></div>
         <div class="msdd" data-key="role"></div>
         <div class="msdd" data-key="level"></div>
         <div class="msdd" data-key="daysOld"></div>
         <div class="msdd" data-key="postStatus"></div>
-        <button class="clearbtn" data-action="preset" title="Apply the Discipline / Role / Level values from your saved criteria">Apply Saved Criteria</button>
+        <button class="clearbtn" data-action="preset" title="Apply the Area / Role / Level values from your saved criteria">Apply Saved Criteria</button>
         <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
         <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
         <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" class="newCoChk"> Exclude new companies</label>
@@ -137,7 +137,7 @@ const LIST_COLUMNS = [
   "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
   "department","team","employment_type","is_remote","salary_min","salary_max","salary_currency","salary_period",
   "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
-  "discipline","role_keyword","level","description_last_change","description_change_count",
+  "area","role_keyword","level","description_last_change","description_change_count",
   "post_status","is_new_company","days_old","days_old_estimated"
 ].join(",");
 
@@ -154,7 +154,7 @@ const DAYS_OLD_OPTIONS = [
   { value: "61+", label: "61+ days", test: n => n >= 61 }
 ];
 
-// True once loadedFilters carries at least one discipline/role/level value,
+// True once loadedFilters carries at least one area/role/level value,
 // from either source (signed-in DB row or local-device blob). The
 // "target-today" digest panels only mean anything relative to a saved
 // search, so they show a prompt instead of an unfiltered board when this
@@ -393,7 +393,7 @@ function initJobsPanel(panelEl) {
     state.filters.wa = Criteria.state.loadedFilters.wa;
     state.filters.remote = Criteria.state.loadedFilters.remote;
     state.filters.search = Criteria.state.loadedFilters.search;
-    state.filters.discipline = Criteria.state.loadedFilters.discipline.slice();
+    state.filters.area = Criteria.state.loadedFilters.area.slice();
     state.filters.role = Criteria.state.loadedFilters.role.slice();
     state.filters.level = Criteria.state.loadedFilters.level.slice();
   }
@@ -460,8 +460,8 @@ function initJobsPanel(panelEl) {
     $(".newCoChk").checked = state.filters.newCompany;
 
     // classifier multi-selects (OR within a dropdown, AND across dropdowns; "(unclassified)" matches nulls)
-    // Only discipline/role/level are saved criteria, so only they report changes back for persistence.
-    buildMultiSelect('[data-key="discipline"]', "discipline", "discipline", "All disciplines", notifyFiltersChanged);
+    // Only area/role/level are saved criteria, so only they report changes back for persistence.
+    buildMultiSelect('[data-key="area"]', "area", "area", "All areas", notifyFiltersChanged);
     buildMultiSelect('[data-key="role"]', "role_keyword", "role", "All roles", notifyFiltersChanged);
     buildMultiSelect('[data-key="level"]', "level", "level", "All levels", notifyFiltersChanged);
     buildDaysOldSelect('[data-key="daysOld"]', "daysOld", "All ages");
@@ -584,7 +584,7 @@ function initJobsPanel(panelEl) {
     const q = f.search.trim().toLowerCase();
     return state.rows.filter(r => {
       if (f.company && r.watchlist_company !== f.company) return false;
-      if (!classifierMatch(f.discipline, r.discipline)) return false;
+      if (!classifierMatch(f.area, r.area)) return false;
       if (!classifierMatch(f.role, r.role_keyword)) return false;
       if (!classifierMatch(f.level, r.level)) return false;
       if (!daysOldMatch(f.daysOld, r)) return false;
@@ -728,11 +728,11 @@ function initJobsPanel(panelEl) {
     const sel = $(".companySel");
     sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); notifyFiltersChanged(); };
     $('[data-action="preset"]').onclick = () => {
-      state.filters.discipline = Criteria.state.loadedFilters.discipline.slice();
+      state.filters.area = Criteria.state.loadedFilters.area.slice();
       state.filters.role = Criteria.state.loadedFilters.role.slice();
       state.filters.level = Criteria.state.loadedFilters.level.slice();
       state.page = 1;
-      ['[data-key="discipline"]', '[data-key="role"]', '[data-key="level"]'].forEach(s => { const c = $(s); if (c && c._sync) c._sync(); });
+      ['[data-key="area"]', '[data-key="role"]', '[data-key="level"]'].forEach(s => { const c = $(s); if (c && c._sync) c._sync(); });
       renderTable();
       notifyFiltersChanged();
     };
@@ -746,7 +746,7 @@ function initJobsPanel(panelEl) {
       $(".waChk").checked = false;
       $(".remChk").checked = false;
       $(".newCoChk").checked = false;
-      ['[data-key="discipline"]', '[data-key="role"]', '[data-key="level"]', '[data-key="daysOld"]', '[data-key="postStatus"]'].forEach(s => { const c = $(s); if (c && c._reset) c._reset(); });
+      ['[data-key="area"]', '[data-key="role"]', '[data-key="level"]', '[data-key="daysOld"]', '[data-key="postStatus"]'].forEach(s => { const c = $(s); if (c && c._reset) c._reset(); });
       renderTable();
       notifyFiltersChanged();
     };
@@ -764,7 +764,7 @@ function initJobsPanel(panelEl) {
 async function main() {
   await Criteria.resolveCriteria();
   const loadedFilters = Criteria.state.loadedFilters;
-  hasSavedCriteria = loadedFilters.discipline.length > 0 || loadedFilters.role.length > 0 || loadedFilters.level.length > 0;
+  hasSavedCriteria = loadedFilters.area.length > 0 || loadedFilters.role.length > 0 || loadedFilters.level.length > 0;
   renderCriteriaBar();
   if (Criteria.state.justSeededFromLocal) Criteria.renderSeedBanner(document.getElementById("seedBanner"));
   const handles = Array.from(document.querySelectorAll(".jobsPanel")).map(initJobsPanel);
