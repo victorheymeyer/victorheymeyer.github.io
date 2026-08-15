@@ -320,18 +320,42 @@ function isNewSeattleOrRemoteWA(r) {
   return !!(r.maybe_wa || r.maybe_remote_wa);
 }
 
-function statCard(n, label) {
-  return '<div class="card"><div class="n">' + n.toLocaleString() + '</div><div class="l">' + label + '</div></div>';
+function statCard(n, label, area) {
+  return '<div class="card clickable" data-area="' + (area || "") + '"><div class="n">' + n.toLocaleString() + '</div><div class="l">' + label + '</div></div>';
 }
 
 function renderStats() {
   const base = state.rows.filter(isNewSeattleOrRemoteWA);
   const byArea = (area) => base.filter(r => r.area === area).length;
   document.getElementById("statsCards").innerHTML =
-    statCard(base.length, "New Seattle Jobs") +
-    statCard(byArea("Product Management"), "PM Jobs") +
-    statCard(byArea("Sales"), "Sales Jobs") +
-    statCard(byArea("Engineering"), "Engineering Jobs");
+    statCard(base.length, "New Seattle Jobs", "") +
+    statCard(byArea("Product Management"), "PM Jobs", "Product Management") +
+    statCard(byArea("Sales"), "Sales Jobs", "Sales") +
+    statCard(byArea("Engineering"), "Engineering Jobs", "Engineering");
+  document.querySelectorAll("#statsCards .card").forEach(card => {
+    card.onclick = () => applyStatFilter(card.dataset.area);
+  });
+}
+
+// Resets the interactive filters to defaults (so the table matches exactly
+// what the clicked stat card counted) and, for the area cards, applies that
+// single area as the only classifier filter.
+function applyStatFilter(area) {
+  state.filters = defaultFilters();
+  if (area) state.filters.area = [area];
+  state.page = 1;
+
+  document.getElementById("search").value = "";
+  document.getElementById("companySel").value = "";
+  document.getElementById("waChk").checked = true;
+  document.getElementById("remChk").checked = true;
+  ["areaDD", "roleDD", "levelDD"].forEach(id => {
+    const c = document.getElementById(id);
+    if (c && c._sync) c._sync();
+  });
+
+  renderTable();
+  document.getElementById("listPanel").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function applyFilters() {

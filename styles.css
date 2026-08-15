@@ -86,6 +86,8 @@ h1 { font-size: var(--fs-xl); margin: 0 0 var(--sp-2); }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-14) var(--sp-16); }
 .card .n { font-size: var(--fs-2xl); font-weight: 600; }
 .card .l { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; }
+.card.clickable { cursor: pointer; transition: border-color .15s; }
+.card.clickable:hover { border-color: var(--accent); }
 
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-16); margin-bottom: var(--sp-18); }
 .panel h2 { font-size: var(--fs-base); margin: 0 0 var(--sp-4); }
