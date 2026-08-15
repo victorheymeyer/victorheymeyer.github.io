@@ -17,6 +17,8 @@
 
   <div id="errBox"></div>
 
+  <div class="cards" id="statsCards"></div>
+
   <div class="panel" id="listPanel" style="display:none">
     <table>
       <thead>
@@ -224,6 +226,7 @@ function render() {
   document.getElementById("listPanel").style.display = "block";
   document.getElementById("filterPanel").style.display = "block";
 
+  renderStats();
   renderTable();
   wireControls();
 }
@@ -305,6 +308,30 @@ function classifierMatch(selected, value) {
   if (!selected || selected.length === 0) return true;
   const isNull = (value == null || value === "");
   return selected.some(sel => sel === UNCLASSIFIED ? isNull : sel === value);
+}
+
+// The fixed "New, WA-or-Remote-WA" criteria this page is built around —
+// independent of the interactive filters in #filterPanel (search, company,
+// classifiers, WA/Remote checkboxes), so the stats cards stay stable as the
+// user filters the table below.
+function isNewSeattleOrRemoteWA(r) {
+  if (r.post_status !== "New" && r.post_status !== "New*") return false;
+  if (r.is_new_company && r.post_status === "New*") return false;
+  return !!(r.maybe_wa || r.maybe_remote_wa);
+}
+
+function statCard(n, label) {
+  return '<div class="card"><div class="n">' + n.toLocaleString() + '</div><div class="l">' + label + '</div></div>';
+}
+
+function renderStats() {
+  const base = state.rows.filter(isNewSeattleOrRemoteWA);
+  const byArea = (area) => base.filter(r => r.area === area).length;
+  document.getElementById("statsCards").innerHTML =
+    statCard(base.length, "New Seattle Jobs") +
+    statCard(byArea("Product Management"), "PM Jobs") +
+    statCard(byArea("Sales"), "Sales Jobs") +
+    statCard(byArea("Engineering"), "Engineering Jobs");
 }
 
 function applyFilters() {
