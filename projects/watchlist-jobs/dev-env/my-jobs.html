@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watchlist Jobs - My Jobs</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js"></script>
+<script defer src="/site-footer.js"></script>
+<script defer src="/job-detail.js"></script>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <div id="seedBanner" style="display:none"></div>
+  <div id="criteriaBar" class="criteria-bar" style="display:none"></div>
+
+  <div class="jobsPanel" data-preset="target-today" data-status="New" data-hide-department="true" data-show-all="true" data-hide-days-old="true">
+    <div class="sub">Loading the latest snapshot...</div>
+
+    <div class="errBox"></div>
+
+    <div class="panel" style="display:none">
+      <h2>Today's New Job Listings — New (all filters applied)</h2>
+      <div class="controls" style="display:none">
+        <input type="text" class="search" placeholder="Search title, company, location, or department">
+        <select class="companySel"><option value="">All companies</option></select>
+        <div class="msdd" data-key="area"></div>
+        <div class="msdd" data-key="role"></div>
+        <div class="msdd" data-key="level"></div>
+        <div class="msdd" data-key="daysOld"></div>
+        <div class="msdd" data-key="postStatus"></div>
+        <button class="clearbtn" data-action="preset" title="Apply the Area / Role / Level values from your saved criteria">Apply Saved Criteria</button>
+        <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
+        <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
+        <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" class="newCoChk"> Exclude new companies</label>
+        <button class="clearbtn" data-action="clear">Clear</button>
+      </div>
+      <div class="hint count"></div>
+      <table>
+        <thead>
+          <tr><th style="width:140px">Company</th><th>Title</th><th style="width:70px">Link</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="pager"></div>
+    </div>
+
+    <div class="loading">Connecting to Supabase...</div>
+  </div>
+
+  <div class="jobsPanel" data-hide-sub="true" data-preset="target">
+    <div class="sub">Loading the latest snapshot...</div>
+
+    <div class="errBox"></div>
+
+    <div class="panel" style="display:none">
+      <div class="controls">
+        <input type="text" class="search" placeholder="Search title, company, location, or department">
+        <select class="companySel"><option value="">All companies</option></select>
+        <div class="msdd" data-key="area"></div>
+        <div class="msdd" data-key="role"></div>
+        <div class="msdd" data-key="level"></div>
+        <div class="msdd" data-key="daysOld"></div>
+        <div class="msdd" data-key="postStatus"></div>
+        <button class="clearbtn" data-action="preset" title="Apply the Area / Role / Level values from your saved criteria">Apply Saved Criteria</button>
+        <label class="chk"><input type="checkbox" class="waChk"> WA Jobs</label>
+        <label class="chk"><input type="checkbox" class="remChk"> Remote-WA Jobs</label>
+        <label class="chk" title="Exclude jobs that only look new because their company was just added to the watchlist"><input type="checkbox" class="newCoChk"> Exclude new companies</label>
+        <button class="clearbtn" data-action="clear">Clear</button>
+        <button class="clearbtn" id="saveCriteriaBtn" style="display:none">Save criteria</button>
+        <span class="hint" id="saveCriteriaMsg"></span>
+      </div>
+      <div class="hint count"></div>
+      <table>
+        <thead>
+          <tr><th style="width:140px">Company</th><th>Title</th><th style="width:200px">Department</th><th style="width:90px" title="Based on first posted date. If no posted date, * is based on first seen">Days old*</th><th style="width:70px">Link</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="pager"></div>
+    </div>
+
+    <div class="loading">Connecting to Supabase...</div>
+  </div>
+
+  <div id="siteFooter"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script src="/projects/watchlist-jobs/criteria.js"></script>
+<script>
+// ---- Config ----
+// Supabase client + saved-criteria storage (resolve/save/local-persist) live
+// in /projects/watchlist-jobs/criteria.js, shared with my-criteria.html - see
+// that file for the uiState/loadedFilters/justSeededFromLocal model.
+const supabaseClient = Criteria.supabaseClient;
+const UNCLASSIFIED = Criteria.UNCLASSIFIED;
+const defaultFilters = Criteria.defaultFilters;
+
+const LIST_COLUMNS = [
+  "snapshot_date","watchlist_company","display_name","ats_id","ats_type","title","location",
+  "department","team","employment_type","is_remote","salary_min","salary_max","salary_currency","salary_period",
+  "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
+  "area","role_keyword","level","description_last_change","description_change_count",
+  "post_status","is_new_company","days_old","days_old_estimated"
+].join(",");
+
+// Days Old filter buckets. Ranges overlap by design (e.g. "Today" is a
+// subset of "Last 3 days", which is a subset of "Last 7 days") - a row
+// matches if ANY checked bucket's test() covers its age.
+const DAYS_OLD_OPTIONS = [
+  { value: "today", label: "Today", test: n => n === 0 },
+  { value: "last3", label: "Last 3 days", test: n => n < 4 },
+  { value: "last7", label: "Last 7 days", test: n => n < 8 },
+  { value: "8-14", label: "8-14 days", test: n => n >= 8 && n <= 14 },
+  { value: "15-30", label: "15-30 days", test: n => n >= 15 && n <= 30 },
+  { value: "31-60", label: "31-60 days", test: n => n >= 31 && n <= 60 },
+  { value: "61+", label: "61+ days", test: n => n >= 61 }
+];
+
+// True once loadedFilters carries at least one area/role/level value,
+// from either source (signed-in DB row or local-device blob). The
+// "target-today" digest panels only mean anything relative to a saved
+// search, so they show a prompt instead of an unfiltered board when this
+// is false, rather than dumping every new job regardless of fit.
+let hasSavedCriteria = false;
+
+function renderCriteriaBar() {
+  const bar = document.getElementById("criteriaBar");
+  bar.innerHTML = "";
+
+  if (Criteria.state.uiState === "local") {
+    bar.style.display = "none";
+    return;
+  }
+  bar.style.display = "";
+
+  const box = document.createElement("div");
+  box.className = "criteria-box";
+
+  const msg = document.createElement("span");
+  if (Criteria.state.uiState === "signed-in") {
+    msg.textContent = "Your saved criteria";
+  } else {
+    msg.textContent = "Sign in to save your search criteria.";
+  }
+  box.appendChild(msg);
+  bar.appendChild(box);
+
+  if (Criteria.state.uiState === "signed-in") {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "clearbtn";
+    btn.textContent = "Sign Out";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      await supabaseClient.auth.signOut();
+      location.reload();
+    };
+    bar.appendChild(btn);
+  }
+}
+
+// Wired to the "all matching" panel only (the one with visible, interactive
+// controls) - it owns the one saved criteria set for the page. The write
+// itself is Criteria.saveCriteria(), shared with my-criteria.html.
+function wireCriteriaSave(getFilters) {
+  const btn = document.getElementById("saveCriteriaBtn");
+  const msg = document.getElementById("saveCriteriaMsg");
+  if (Criteria.state.uiState !== "signed-in") { btn.style.display = "none"; return; }
+  btn.style.display = "";
+  btn.onclick = async () => {
+    msg.innerHTML = "";
+    btn.disabled = true;
+    try {
+      await Criteria.saveCriteria(getFilters());
+      msg.textContent = "Saved.";
+    } catch (err) {
+      msg.innerHTML = '<div class="err">Could not save: ' + JobDetail.esc((err && err.message) ? err.message : String(err)) + '</div>';
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
+// ---- Helpers shared by every panel instance ----
+async function fetchAllRows(table, selectCols, applyFilters) {
+  // Requested page size. Supabase caps rows-per-request server-side
+  // (Project Settings > API > Max Rows, default 1000) and silently clamps
+  // anything larger than that cap, so we detect the REAL per-request size
+  // from what the first response actually contains rather than assuming
+  // this number was honored. That keeps pagination correct whether or not
+  // the server-side cap has been raised to match.
+  const requestedPageSize = 10000;
+  function buildQuery(withCount) {
+    let q = supabaseClient.from(table).select(selectCols, withCount ? { count: "exact" } : undefined);
+    if (applyFilters) q = applyFilters(q);
+    return q;
+  }
+
+  // First page tells us the exact total row count and the real per-request
+  // cap, so we know how many more pages exist and can fire them all in
+  // parallel instead of paging one sequential round trip at a time.
+  const first = await buildQuery(true).range(0, requestedPageSize - 1);
+  if (first.error) throw first.error;
+  let all = first.data || [];
+  const total = first.count != null ? first.count : all.length;
+  const actualPageSize = all.length > 0 ? all.length : requestedPageSize;
+
+  if (all.length < total) {
+    const requests = [];
+    for (let from = all.length; from < total; from += actualPageSize) {
+      requests.push(buildQuery(false).range(from, from + actualPageSize - 1));
+    }
+    const results = await Promise.all(requests);
+    for (const r of results) {
+      if (r.error) throw r.error;
+      all = all.concat(r.data || []);
+    }
+  }
+  return all;
+}
+
+const MONTH_NAMES = ["January","February","March","April","May","June",
+  "July","August","September","October","November","December"];
+// Parses a "YYYY-MM-DD" date string directly (no Date object) so the
+// displayed day can't shift due to local-timezone conversion.
+function fmtDateLong(d) {
+  if (!d) return "";
+  const [y, m, day] = String(d).slice(0, 10).split("-").map(Number);
+  if (!y || !m || !day) return d;
+  return MONTH_NAMES[m - 1] + " " + day + ", " + y;
+}
+
+// "today" / "1 day ago" / "N days ago", comparing the snapshot date against
+// the viewer's local calendar date (not the server's or UTC's).
+function daysAgoLabel(d) {
+  if (!d) return "";
+  const [y, m, day] = String(d).slice(0, 10).split("-").map(Number);
+  if (!y || !m || !day) return "";
+  const snapshotUTC = Date.UTC(y, m - 1, day);
+  const now = new Date();
+  const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((todayUTC - snapshotUTC) / 86400000);
+  if (diff <= 0) return "today";
+  return diff + (diff === 1 ? " day ago" : " days ago");
+}
+
+function classifierMatch(selected, value) {
+  if (!selected || selected.length === 0) return true;
+  const isNull = (value == null || value === "");
+  return selected.some(sel => sel === UNCLASSIFIED ? isNull : sel === value);
+}
+
+// Row matches if ANY selected bucket's test() covers its days_old.
+function daysOldMatch(selected, r) {
+  if (!selected || selected.length === 0) return true;
+  const n = r.days_old;
+  return selected.some(v => {
+    if (v === UNCLASSIFIED) return n == null;
+    if (n == null) return false;
+    const opt = DAYS_OLD_OPTIONS.find(o => o.value === v);
+    return opt ? opt.test(n) : false;
+  });
+}
+
+// ---- Shared data loader ----
+// Every .jobsPanel renders from the same jobs_location_flags snapshot, so
+// fetch it once here and broadcast to whichever panels have subscribed,
+// instead of each panel re-querying Supabase independently (that used to
+// mean ~2MB of JSON fetched and parsed once per panel on this page).
+const QUICK_PAGE_SIZE = 10;
+const sharedData = { rows: [], snapshotDate: null, fullyLoaded: false, error: null };
+const dataListeners = [];
+function onSharedData(fn) {
+  dataListeners.push(fn);
+  if (sharedData.snapshotDate || sharedData.error) fn(sharedData);
+}
+function notifySharedData() {
+  dataListeners.forEach(fn => fn(sharedData));
+}
+
+async function loadSharedData() {
+  try {
+    // Queried against raw_watchlist_jobs (not the jobs_location_flags view) so
+    // idx_raw_watchlist_jobs_snapshot_date makes this an index scan instead of
+    // forcing a full join expansion.
+    const { data: latest, error: e1 } = await supabaseClient.from("raw_watchlist_jobs").select("snapshot_date")
+      .order("snapshot_date", { ascending: false }).limit(1);
+    if (e1) throw e1;
+    if (!latest || !latest.length) { sharedData.error = "No rows found in raw_watchlist_jobs."; notifySharedData(); return; }
+    sharedData.snapshotDate = latest[0].snapshot_date;
+
+    // Quick first paint: pull just enough rows (newest-first, same order
+    // renderTable defaults to) to fill the first page, so panels show
+    // something in one small round trip instead of waiting on the full,
+    // multi-thousand-row fetch below. Filters/counts/other pages aren't
+    // reliable until the full set lands, so fullyLoaded flags that.
+    const quick = await supabaseClient.from("jobs_location_flags").select(LIST_COLUMNS)
+      .eq("snapshot_date", sharedData.snapshotDate)
+      .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
+      .order("days_old", { ascending: true, nullsFirst: false })
+      .limit(QUICK_PAGE_SIZE);
+    if (quick.error) throw quick.error;
+    sharedData.rows = quick.data || [];
+    sharedData.fullyLoaded = false;
+    notifySharedData();
+
+    // Full set for the latest snapshot, loaded in the background so filters,
+    // the company/classifier dropdowns, and pagination beyond page 1 become
+    // accurate a moment later without blocking the initial paint above. No
+    // server-side order here: renderTable() re-sorts client-side by
+    // effective age, so a server sort is wasted work that can spill to disk.
+    sharedData.rows = await fetchAllRows("jobs_location_flags", LIST_COLUMNS, (q) =>
+      q.eq("snapshot_date", sharedData.snapshotDate)
+       .or("maybe_wa.not.is.false,maybe_remote_wa.not.is.false")
+    );
+    sharedData.fullyLoaded = true;
+    notifySharedData();
+  } catch (err) {
+    sharedData.error = (err && err.message) ? err.message : String(err);
+    notifySharedData();
+  }
+}
+
+// ---- Panel factory ----
+// Each .jobsPanel element on the page runs an independent copy of this: its
+// own state, filters, and paging, all scoped to that element via $(). Lets
+// the same "block" be dropped onto the page more than once. Returns a small
+// handle ({ panelEl, getFilters }) so page-level code (the Save button) can
+// read this panel's live filters without reaching into its closure.
+function initJobsPanel(panelEl) {
+  const $ = (sel) => panelEl.querySelector(sel);
+  const hideDepartment = panelEl.hasAttribute("data-hide-department");
+  const showAll = panelEl.hasAttribute("data-show-all");
+  const hideSub = panelEl.hasAttribute("data-hide-sub");
+  const hideDaysOld = panelEl.hasAttribute("data-hide-days-old");
+
+  const state = {
+    rows: [],
+    snapshotDate: null,
+    descCache: {},
+    filters: defaultFilters(),
+    page: 1,
+    pageSize: 10,
+    expanded: null,
+    fullyLoaded: false
+  };
+
+  // Panels opt into the page's resolved criteria via data-preset on the
+  // .jobsPanel element, applied once before the first render. "target" and
+  // "target-today" both seed the full saved-criteria shape; "target-today"
+  // additionally forces the Today days-old bucket on top (a display choice
+  // for that panel, not part of anyone's saved criteria).
+  if (panelEl.dataset.preset === "target" || panelEl.dataset.preset === "target-today") {
+    state.filters.company = Criteria.state.loadedFilters.company;
+    state.filters.wa = Criteria.state.loadedFilters.wa;
+    state.filters.remote = Criteria.state.loadedFilters.remote;
+    state.filters.search = Criteria.state.loadedFilters.search;
+    state.filters.area = Criteria.state.loadedFilters.area.slice();
+    state.filters.role = Criteria.state.loadedFilters.role.slice();
+    state.filters.level = Criteria.state.loadedFilters.level.slice();
+  }
+  if (panelEl.dataset.preset === "target-today") {
+    state.filters.postStatus = [panelEl.dataset.status];
+  }
+
+  // Only the interactive "all matching" panel (data-preset="target", visible
+  // controls) drives the local-device auto-save; the "today" panel's
+  // controls are hidden and never fire these handlers anyway.
+  function notifyFiltersChanged() {
+    if (panelEl.dataset.preset !== "target") return;
+    const wasLocal = Criteria.state.uiState === "local";
+    Criteria.maybePersistLocal(state.filters);
+    if (!wasLocal && Criteria.state.uiState === "local") renderCriteriaBar();
+  }
+
+  // ---- Helpers ----
+  function showError(msg) {
+    $(".errBox").innerHTML =
+      '<div class="err"><strong>Could not load data.</strong><br>' + msg +
+      '<br><br>If this is a permissions error, remember both the RLS <code>select</code> policy for <code>anon</code> AND the table <code>GRANT</code> are needed for reads.</div>';
+  }
+
+  // ---- Data load ----
+  // Rows come from the shared loader (one Supabase fetch total, no matter how
+  // many panels are on the page) rather than each panel querying on its own.
+  function onData(data) {
+    $(".loading").style.display = "none";
+    if (data.error) { showError(data.error); return; }
+    if (!data.snapshotDate) return;
+    state.snapshotDate = data.snapshotDate;
+    state.rows = data.rows;
+    state.fullyLoaded = data.fullyLoaded;
+    render();
+  }
+
+  // ---- Render ----
+  function render() {
+    if (hideSub) {
+      $(".sub").style.display = "none";
+    } else {
+      $(".sub").textContent =
+        "As of " + daysAgoLabel(state.snapshotDate) + " (" + fmtDateLong(state.snapshotDate) + ")" +
+        (state.fullyLoaded ? "" : " (loading full list for filtering/paging…)");
+    }
+
+    // company dropdown
+    const sel = $(".companySel");
+    const companyNames = new Map();
+    state.rows.forEach(r => {
+      if (!companyNames.has(r.watchlist_company)) companyNames.set(r.watchlist_company, r.display_name || r.watchlist_company);
+    });
+    const companies = Array.from(companyNames.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    sel.innerHTML = '<option value="">All companies</option>' +
+      companies.map(([slug, name]) => '<option value="' + JobDetail.esc(slug) + '">' + JobDetail.esc(name) + '</option>').join("");
+    sel.value = state.filters.company;
+
+    // Plain controls don't self-sync like the checkbox dropdowns below do,
+    // so reflect loaded/current state.filters into them on every render.
+    $(".search").value = state.filters.search;
+    $(".waChk").checked = state.filters.wa;
+    $(".remChk").checked = state.filters.remote;
+    $(".newCoChk").checked = state.filters.newCompany;
+
+    // classifier multi-selects (OR within a dropdown, AND across dropdowns; "(unclassified)" matches nulls)
+    // Only area/role/level are saved criteria, so only they report changes back for persistence.
+    buildMultiSelect('[data-key="area"]', "area", "area", "All areas", notifyFiltersChanged);
+    buildMultiSelect('[data-key="role"]', "role_keyword", "role", "All roles", notifyFiltersChanged);
+    buildMultiSelect('[data-key="level"]', "level", "level", "All levels", notifyFiltersChanged);
+    buildDaysOldSelect('[data-key="daysOld"]', "daysOld", "All ages");
+    buildMultiSelect('[data-key="postStatus"]', "post_status", "postStatus", "All statuses");
+
+    $(".panel").style.display = "block";
+
+    // Digest panels only mean anything relative to a saved search - with
+    // none set, "today's new jobs" is just "all jobs", which isn't the
+    // point of this panel. Show a prompt instead of an unfiltered table.
+    if (panelEl.dataset.preset === "target-today" && !hasSavedCriteria) {
+      $("table").style.display = "none";
+      $(".pager").innerHTML = "";
+      let msg = $(".no-criteria-msg");
+      if (!msg) {
+        msg = document.createElement("div");
+        msg.className = "no-criteria-msg criteria-box";
+        $("table").insertAdjacentElement("beforebegin", msg);
+      }
+      msg.textContent = "Please add criteria or sign in";
+      return;
+    }
+    const existingMsg = $(".no-criteria-msg");
+    if (existingMsg) existingMsg.remove();
+    $("table").style.display = "";
+
+    renderTable();
+    wireControls();
+  }
+
+  // Shared wiring for a checkbox-dropdown filter (button toggle, clear-all,
+  // per-checkbox state.filters[filterKey] tracking, reset/sync for external
+  // callers like the preset button). optionsHtml is the pre-built list of
+  // <label><input type=checkbox>...</label> options for the panel. onChange,
+  // if given, fires after every toggle/clear-all so callers can react (e.g.
+  // persist to localStorage) - only passed for filters that are saved criteria.
+  function buildCheckboxDropdown(containerSel, filterKey, allLabel, optionsHtml, onChange) {
+    const container = $(containerSel);
+    container.innerHTML =
+      '<button type="button" class="msdd-btn"></button>' +
+      '<div class="msdd-panel" hidden>' +
+        '<button type="button" class="msdd-clear">Clear all</button>' +
+        optionsHtml +
+      '</div>';
+    const btn = container.querySelector(".msdd-btn");
+    const panel = container.querySelector(".msdd-panel");
+    const clearAllBtn = container.querySelector(".msdd-clear");
+    const shortLabel = allLabel.replace(/^All /, "");
+
+    function updateLabel() {
+      const n = state.filters[filterKey].length;
+      btn.textContent = (n === 0 ? allLabel : shortLabel + " (" + n + ")") + " ▾";
+      btn.classList.toggle("active", n > 0);
+    }
+    updateLabel();
+
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      panelEl.querySelectorAll(".msdd-panel").forEach(p => { if (p !== panel) p.hidden = true; });
+      panel.hidden = !panel.hidden;
+    };
+    panel.onclick = (e) => e.stopPropagation();
+    clearAllBtn.onclick = () => {
+      state.filters[filterKey] = [];
+      panel.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+      state.page = 1;
+      updateLabel();
+      renderTable();
+      if (onChange) onChange();
+    };
+    panel.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.onchange = () => {
+        const arr = state.filters[filterKey];
+        const i = arr.indexOf(cb.value);
+        if (cb.checked && i < 0) arr.push(cb.value);
+        if (!cb.checked && i >= 0) arr.splice(i, 1);
+        state.page = 1;
+        updateLabel();
+        renderTable();
+        if (onChange) onChange();
+      };
+    });
+    container._reset = () => {
+      panel.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+      updateLabel();
+    };
+    // Re-check boxes to match state.filters[filterKey] (e.g. after a preset applies filters programmatically).
+    container._sync = () => {
+      panel.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.checked = state.filters[filterKey].includes(cb.value);
+      });
+      updateLabel();
+    };
+    container._sync();
+  }
+
+  // dataField = row property, filterKey = state.filters key. Options are the
+  // distinct non-null values actually present in state.rows.
+  function buildMultiSelect(containerSel, dataField, filterKey, allLabel, onChange) {
+    const values = Array.from(new Set(state.rows.map(r => r[dataField]).filter(v => v != null && v !== ""))).sort();
+    const hasNull = state.rows.some(r => r[dataField] == null || r[dataField] === "");
+    const optionsHtml =
+      values.map(v => '<label class="msdd-opt"><input type="checkbox" value="' + JobDetail.esc(v) + '"> ' + JobDetail.esc(v) + '</label>').join("") +
+      (hasNull ? '<label class="msdd-opt"><input type="checkbox" value="' + UNCLASSIFIED + '"> (unclassified)</label>' : "");
+    buildCheckboxDropdown(containerSel, filterKey, allLabel, optionsHtml, onChange);
+  }
+
+  // Fixed bucket list from DAYS_OLD_OPTIONS (not derived from data), plus an
+  // "(unclassified)" option when some row has no days_old.
+  function buildDaysOldSelect(containerSel, filterKey, allLabel) {
+    const hasNull = state.rows.some(r => r.days_old == null);
+    const optionsHtml =
+      DAYS_OLD_OPTIONS.map(o => '<label class="msdd-opt"><input type="checkbox" value="' + o.value + '"> ' + JobDetail.esc(o.label) + '</label>').join("") +
+      (hasNull ? '<label class="msdd-opt"><input type="checkbox" value="' + UNCLASSIFIED + '"> (unclassified)</label>' : "");
+    buildCheckboxDropdown(containerSel, filterKey, allLabel, optionsHtml);
+  }
+
+  function applyFilters() {
+    const f = state.filters;
+    const q = f.search.trim().toLowerCase();
+    return state.rows.filter(r => {
+      if (f.company && r.watchlist_company !== f.company) return false;
+      if (!classifierMatch(f.area, r.area)) return false;
+      if (!classifierMatch(f.role, r.role_keyword)) return false;
+      if (!classifierMatch(f.level, r.level)) return false;
+      if (!daysOldMatch(f.daysOld, r)) return false;
+      if (!classifierMatch(f.postStatus, r.post_status)) return false;
+      if (f.newCompany && r.is_new_company && r.post_status === "New*") return false;
+      if (f.wa || f.remote) {
+        const ok = (f.wa && r.maybe_wa) || (f.remote && r.maybe_remote_wa);
+        if (!ok) return false;
+      }
+      if (q) {
+        const hay = ((r.title || "") + " " + (r.watchlist_company || "") + " " + (r.location || "") + " " + (r.department || "")).toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderTable() {
+    const filtered = applyFilters();
+    filtered.sort((a, b) => {
+      const da = a.days_old, db = b.days_old;
+      if (da == null && db == null) return 0;
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return da - db;
+    });
+    const total = filtered.length;
+    const pages = showAll ? 1 : Math.max(1, Math.ceil(total / state.pageSize));
+    if (state.page > pages) state.page = pages;
+    const start = showAll ? 0 : (state.page - 1) * state.pageSize;
+    const slice = showAll ? filtered : filtered.slice(start, start + state.pageSize);
+
+    $(".count").textContent =
+      total.toLocaleString() + " role" + (total === 1 ? "" : "s") + " matched" +
+      (showAll ? "" : (total ? (" (showing " + (start + 1) + " to " + Math.min(start + state.pageSize, total) + ")") : ""));
+
+    const tbody = $("tbody");
+    tbody.innerHTML = "";
+    slice.forEach(r => {
+      const key = r.watchlist_company + "::" + r.ats_id;
+      const link = r.url || r.apply_url;
+      const badges =
+        (r.maybe_wa ? '<span class="badge wa">WA</span>' : "") +
+        (r.maybe_remote_wa ? '<span class="badge rem">Remote</span>' : "");
+      const daysCell = r.days_old == null ? "-" : (r.days_old_estimated ? r.days_old + "*" : r.days_old);
+      const daysTitle = r.days_old_estimated ? "posted_at unavailable for this source; estimated from first_seen" : "";
+      const tr = document.createElement("tr");
+      tr.className = "jobrow";
+      tr.innerHTML =
+        '<td class="company">' + JobDetail.esc(r.display_name || r.watchlist_company) + '</td>' +
+        '<td title="' + JobDetail.esc(r.title || "") + '">' + JobDetail.esc(r.title || "(no title)") + badges + '</td>' +
+        (hideDepartment ? "" : '<td class="loc" title="' + JobDetail.esc(r.department || "") + '">' + JobDetail.esc(r.department || "") + '</td>') +
+        (hideDaysOld ? "" : '<td class="loc" title="' + JobDetail.esc(daysTitle) + '">' + daysCell + '</td>') +
+        '<td>' + (link ? '<a href="' + JobDetail.esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
+      tr.onclick = () => toggleRow(key, r, tr);
+      tbody.appendChild(tr);
+
+      if (state.expanded === key) {
+        appendDetail(tbody, key, r);
+      }
+    });
+
+    renderPager(total, pages);
+  }
+
+  function goToPage(n, pages) {
+    if (isNaN(n)) return;
+    state.page = Math.min(Math.max(1, Math.floor(n)), pages);
+    renderTable();
+  }
+
+  function renderPager(total, pages) {
+    const p = $(".pager");
+    p.innerHTML = "";
+    if (total === 0 || showAll) return;
+
+    function btn(text, disabled, onclick) {
+      const b = document.createElement("button");
+      b.textContent = text; b.disabled = disabled; b.onclick = onclick;
+      return b;
+    }
+
+    const first = btn("First", state.page <= 1, () => goToPage(1, pages));
+    const prev = btn("Prev", state.page <= 1, () => goToPage(state.page - 1, pages));
+    const next = btn("Next", state.page >= pages, () => goToPage(state.page + 1, pages));
+    const last = btn("Last", state.page >= pages, () => goToPage(pages, pages));
+
+    const jump = document.createElement("span");
+    jump.className = "jump";
+    jump.appendChild(document.createTextNode("Page "));
+    const input = document.createElement("input");
+    input.type = "number"; input.min = 1; input.max = pages; input.value = state.page;
+    input.onchange = () => goToPage(Number(input.value), pages);
+    input.onkeydown = (e) => { if (e.key === "Enter") goToPage(Number(input.value), pages); };
+    jump.appendChild(input);
+    jump.appendChild(document.createTextNode(" of " + pages));
+
+    p.appendChild(first);
+    p.appendChild(prev);
+    p.appendChild(jump);
+    p.appendChild(next);
+    p.appendChild(last);
+  }
+
+  function toggleRow(key, r, tr) {
+    state.expanded = (state.expanded === key) ? null : key;
+    renderTable();
+  }
+
+  async function appendDetail(tbody, key, r) {
+    const colSpan = 5 - (hideDepartment ? 1 : 0) - (hideDaysOld ? 1 : 0);
+    let tr = JobDetail.render(r);
+    tr.querySelector("td").colSpan = colSpan;
+    tbody.appendChild(tr);
+
+    try {
+      let cached = state.descCache[key];
+      if (cached === undefined) {
+        const { data, error } = await supabaseClient
+          .from("job_content").select("description, location")
+          .eq("watchlist_company", r.watchlist_company).eq("ats_id", r.ats_id).limit(1);
+        if (error) throw error;
+        cached = (data && data.length) ? { description: data[0].description, location: data[0].location } : { description: null, location: null };
+        state.descCache[key] = cached;
+      }
+      const updated = JobDetail.render(r, cached.description, cached.location);
+      updated.querySelector("td").colSpan = colSpan;
+      tr.replaceWith(updated);
+      tr = updated;
+    } catch (err) {
+      const target = tr.querySelector(".desc");
+      const locTarget = tr.querySelector(".locval");
+      if (locTarget) locTarget.textContent = "N/A";
+      if (target) target.textContent = "Could not load description: " + ((err && err.message) ? err.message : String(err));
+    }
+  }
+
+  function wireControls() {
+    const search = $(".search");
+    search.oninput = () => { state.filters.search = search.value; state.page = 1; renderTable(); notifyFiltersChanged(); };
+    const sel = $(".companySel");
+    sel.onchange = () => { state.filters.company = sel.value; state.page = 1; renderTable(); notifyFiltersChanged(); };
+    $('[data-action="preset"]').onclick = () => {
+      state.filters.area = Criteria.state.loadedFilters.area.slice();
+      state.filters.role = Criteria.state.loadedFilters.role.slice();
+      state.filters.level = Criteria.state.loadedFilters.level.slice();
+      state.page = 1;
+      ['[data-key="area"]', '[data-key="role"]', '[data-key="level"]'].forEach(s => { const c = $(s); if (c && c._sync) c._sync(); });
+      renderTable();
+      notifyFiltersChanged();
+    };
+    $(".waChk").onchange = (e) => { state.filters.wa = e.target.checked; state.page = 1; renderTable(); notifyFiltersChanged(); };
+    $(".remChk").onchange = (e) => { state.filters.remote = e.target.checked; state.page = 1; renderTable(); notifyFiltersChanged(); };
+    $(".newCoChk").onchange = (e) => { state.filters.newCompany = e.target.checked; state.page = 1; renderTable(); notifyFiltersChanged(); };
+    $('[data-action="clear"]').onclick = () => {
+      state.filters = defaultFilters();
+      state.page = 1;
+      search.value = ""; sel.value = "";
+      $(".waChk").checked = false;
+      $(".remChk").checked = false;
+      $(".newCoChk").checked = false;
+      ['[data-key="area"]', '[data-key="role"]', '[data-key="level"]', '[data-key="daysOld"]', '[data-key="postStatus"]'].forEach(s => { const c = $(s); if (c && c._reset) c._reset(); });
+      renderTable();
+      notifyFiltersChanged();
+    };
+    // close any open dropdown when clicking elsewhere
+    document.addEventListener("click", () => {
+      panelEl.querySelectorAll(".msdd-panel").forEach(p => { p.hidden = true; });
+    });
+  }
+
+  onSharedData(onData);
+
+  return { panelEl, getFilters: () => state.filters };
+}
+
+async function main() {
+  await Criteria.resolveCriteria();
+  const loadedFilters = Criteria.state.loadedFilters;
+  hasSavedCriteria = loadedFilters.area.length > 0 || loadedFilters.role.length > 0 || loadedFilters.level.length > 0;
+  renderCriteriaBar();
+  if (Criteria.state.justSeededFromLocal) Criteria.renderSeedBanner(document.getElementById("seedBanner"));
+  const handles = Array.from(document.querySelectorAll(".jobsPanel")).map(initJobsPanel);
+  const targetPanel = handles.find(h => h.panelEl.dataset.preset === "target");
+  if (targetPanel) wireCriteriaSave(targetPanel.getFilters);
+  loadSharedData();
+}
+main();
+</script>
+</body>
+</html>

@@ -10,6 +10,7 @@
     { divider: true },
     { label: "Slug Search", href: "/projects/watchlist-jobs/company-search/" },
     { label: "All", href: "/projects/watchlist-jobs/global.html" },
+    { label: "Dev", href: "/projects/watchlist-jobs/dev-env/my-jobs" },
     { label: "Stats", href: "/projects/watchlist-jobs/stats/index.html" },
     { divider: true },
     { label: "About", href: "/projects/watchlist-jobs/about.html" }
