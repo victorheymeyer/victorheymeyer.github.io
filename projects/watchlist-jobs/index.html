@@ -25,7 +25,10 @@
       <tbody id="tbody"></tbody>
     </table>
     <div class="pager" id="pager"></div>
-    <h2 style="margin-top: var(--sp-24)">Filters:</h2>
+  </div>
+
+  <div class="panel" id="filterPanel" style="display:none">
+    <h2>Filters:</h2>
     <div class="controls">
       <input type="text" id="search" placeholder="Search title, company, location, or department">
       <select id="companySel"><option value="">All companies</option></select>
@@ -219,6 +222,7 @@ function render() {
   buildMultiSelect("levelDD", "level", "level", "All levels");
 
   document.getElementById("listPanel").style.display = "block";
+  document.getElementById("filterPanel").style.display = "block";
 
   renderTable();
   wireControls();
