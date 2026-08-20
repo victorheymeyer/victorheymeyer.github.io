@@ -569,7 +569,7 @@ function initJobsPanel(panelEl) {
         '<td title="' + JobDetail.esc(r.title || "") + '">' + JobDetail.esc(r.title || "(no title)") + badges + '</td>' +
         (hideDepartment ? "" : '<td class="loc" title="' + JobDetail.esc(r.department || "") + '">' + JobDetail.esc(r.department || "") + '</td>') +
         (hideDaysOld ? "" : '<td class="loc" title="' + JobDetail.esc(daysTitle) + '">' + daysCell + '</td>') +
-        '<td>' + (link ? '<a href="' + JobDetail.esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
+        '<td>' + (link ? '<a href="' + JobDetail.esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" data-company="' + JobDetail.esc(r.watchlist_company || "") + '" data-ats-id="' + JobDetail.esc(r.ats_id || "") + '">view</a>' : "") + '</td>';
       tr.onclick = () => toggleRow(key, r, tr);
       tbody.appendChild(tr);
 

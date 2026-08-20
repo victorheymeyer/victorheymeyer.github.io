@@ -352,7 +352,7 @@ function renderTable() {
       '<td title="' + esc(r.title || "") + '">' + esc(r.title || "(no title)") + badges + '</td>' +
       '<td class="loc" title="' + esc(r.location || "") + '">' + esc(r.location || "") + '</td>' +
       '<td class="loc" title="' + esc(dOldTitle) + '">' + (dOld == null ? "-" : (dOld + (r.days_old_estimated ? "*" : ""))) + '</td>' +
-      '<td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener">view</a>' : "") + '</td>';
+      '<td>' + (link ? '<a href="' + esc(link) + '" target="_blank" rel="noopener" data-company="' + esc(r.watchlist_company || "") + '" data-ats-id="' + esc(r.ats_id || "") + '">view</a>' : "") + '</td>';
     tbody.appendChild(tr);
   });
 
