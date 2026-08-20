@@ -1,10 +1,16 @@
 # projects/watchlist-jobs/fetch_watchlist_jobs.py
 import hashlib
 import html as html_mod
+import json
 import os
 import re
 import sys
+import time
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import psycopg2
@@ -178,6 +184,310 @@ def augment_location(location, raw):
             seen.add(key)
             parts.append(loc)
     return "; ".join(parts) if parts else location
+# -----------------------------------------------------------------------------
+
+# --- Workday location-rollup resolution (loader-side, url-only) --------------
+# Workday's search endpoint sometimes reports a multi-office posting as a
+# rollup string like "5 Locations" instead of the real city list -- the
+# actual locations only exist on the per-job CXS detail endpoint. ats-scrapers
+# already resolves this during the original scrape (workday.py's
+# `_enrich_details`), but a rollup that's still unresolved by the time a row
+# reaches job_content stays "N Locations" forever, since nothing re-visits it
+# on a later run.
+#
+# This pass re-fetches just those detail pages, entirely from each row's own
+# stored `url` -- confirmed against one stuck row per tenant across all 14
+# Workday tenants carrying rollups (cisco, blueorigin, salesforce, adobe, hp,
+# crowdstrike, boeing, workday, visa, cloudera, nordstrom, tempus, sprinklr,
+# plugpower) that `url` is always the `/job/{location-slug}/{title}_{reqid}`
+# shape, never the bare careers URL, so `co`/`site`/`externalPath` are always
+# recoverable without touching the vendored scraper or its config.
+#
+# Deliberately does not import or call into ats_scrapers for any of this: the
+# URL-parsing and location-formatting logic below are loader-side
+# re-derivations of the same string transforms workday.py does internally,
+# not calls into it.
+_WORKDAY_ROLLUP_RE = re.compile(r"^\d+\s+Locations?$")
+_WORKDAY_JOB_PATH_RE = re.compile(r"/job/.*$")
+_WORKDAY_RETRY_STATUSES = {403, 429, 502, 503, 504}
+_WORKDAY_MAX_RETRIES = 3
+_WORKDAY_RETRY_BACKOFF = 1.5
+_WORKDAY_MAX_WORKERS = 8  # kept low on purpose -- Workday 403s on bursts,
+                          # which is exactly the failure mode being retried.
+
+
+def _workday_detail_url(url):
+    """Turn a stored Workday job `url` into its CXS detail URL.
+
+    Mirrors workday.py's URL_PATTERN + `_external_path()` (co = first host
+    label, site = first path segment, externalPath = from `/job/` on), but
+    re-parses the string already sitting in the row rather than calling into
+    the scraper. Returns None for anything that doesn't fit the shape --
+    no `/job/` segment, or an extra path segment before it (e.g. a locale
+    prefix) -- so callers skip the row instead of guessing at a URL shape
+    that wasn't verified. (Checked against all 14 tenants: none currently
+    need this fallback.)
+    """
+    parts = urlsplit(url)
+    if not parts.netloc or not parts.path:
+        return None
+    job_match = _WORKDAY_JOB_PATH_RE.search(parts.path)
+    if not job_match:
+        return None
+    external_path = job_match.group(0)
+    site_segments = [s for s in parts.path[:job_match.start()].split("/") if s]
+    if len(site_segments) != 1:
+        return None
+    site = site_segments[0]
+    co = parts.netloc.split(".")[0]
+    return f"https://{parts.netloc}/wday/cxs/{co}/{site}{external_path}"
+
+
+def _workday_get_detail(detail_url):
+    """GET one Workday CXS detail JSON, retrying transient/burst failures.
+
+    A dedicated getter rather than a shared one: this file has no existing
+    `_get_with_retry` to extend, so writing a separate function here is what
+    keeps every other ATS path (Ashby included) byte-for-byte untouched.
+    Accept-only header -- a Content-Type on this GET gets a 406 from
+    Workday's CXS endpoint. 403 is retried alongside 429/502/503/504 because
+    Workday bursts 403s under concurrency (workday.py's own `_request` does
+    the same retry).
+    """
+    req = urllib.request.Request(
+        detail_url,
+        headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
+    )
+    last_exc = None
+    for attempt in range(_WORKDAY_MAX_RETRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code not in _WORKDAY_RETRY_STATUSES or attempt == _WORKDAY_MAX_RETRIES - 1:
+                raise
+            last_exc = e
+        except urllib.error.URLError as e:
+            if attempt == _WORKDAY_MAX_RETRIES - 1:
+                raise
+            last_exc = e
+        time.sleep(_WORKDAY_RETRY_BACKOFF ** attempt)
+    raise last_exc
+
+
+def _workday_status_label(exc):
+    """Best-effort status label for logging an `_workday_get_detail` failure:
+    the HTTP status code when the failure was an HTTP response, else the
+    exception's type name. Distinguishing e.g. 403 (IP/burst blocked) from
+    404 (bad URL construction) from a bare timeout is the whole point --
+    they call for completely different fixes, and collapsing them into one
+    error string hides which one happened."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return str(exc.code)
+    return type(exc).__name__
+
+
+def _workday_format_locations(primary, additional):
+    """Loader-side copy of ats_scrapers' workday.py `_format_locations`
+    (vendored wheel, ~lines 565-575): pipe-join primary + additional,
+    case-sensitive-string dedup. Duplicated rather than imported -- reaching
+    into the vendored wheel's internals is off the table, and a copy means a
+    future upstream format change won't silently change this pass's output
+    without a matching update here.
+    """
+    locs = []
+    if isinstance(primary, str) and primary.strip():
+        locs.append(primary.strip())
+    if isinstance(additional, list):
+        for v in additional:
+            if isinstance(v, str) and v.strip() and v.strip() not in locs:
+                locs.append(v.strip())
+    return " | ".join(locs) if locs else None
+
+
+# ==============================================================================
+# TEMPORARY -- WORKDAY_ROLLUP_DIAGNOSTIC mode.
+#
+# One-question diagnostic: does the GitHub Actions runner's IP get 403'd by
+# Workday under concurrency the way Colab's did? Sample-and-log only, no
+# writes to fact_rows/dim_rows or the database. Opt-in via the
+# WORKDAY_ROLLUP_DIAGNOSTIC env var (row count, e.g. "20") -- unset, this
+# whole block is dead code and `resolve_workday_rollups` behaves exactly as
+# before.
+#
+# TO REMOVE once answered: delete this marked block (both functions) and the
+# two marked snippets inside `resolve_workday_rollups` below (the env-var
+# read at the top, and the `if diagnostic_n:` branch right after `stuck` is
+# built). Nothing else references these names.
+# ==============================================================================
+
+def _sample_one_per_company(rows, n):
+    """Pick up to n rows spread across distinct companies: one per company
+    first (in `rows` order), then fill any remainder from what's left,
+    order preserved throughout. Plain list rows, no sorting/shuffling."""
+    by_company = {}
+    for row in rows:
+        by_company.setdefault(row["watchlist_company"], []).append(row)
+
+    sample = [company_rows[0] for company_rows in by_company.values()][:n]
+    if len(sample) < n:
+        picked = {(r["watchlist_company"], r["ats_id"]) for r in sample}
+        for row in rows:
+            if len(sample) >= n:
+                break
+            key = (row["watchlist_company"], row["ats_id"])
+            if key not in picked:
+                sample.append(row)
+                picked.add(key)
+    return sample[:n]
+
+
+def _run_workday_rollup_diagnostic(stuck, n):
+    """Fetch+log only: sample up to n stuck rows (one-per-company where
+    possible), hit the same detail endpoint the real pass would, and print
+    the company / detail URL / outcome for each -- then a status-code
+    summary and the resolved strings for anything that succeeded. Never
+    touches fact_rows/dim_rows and performs no database I/O of any kind."""
+    sample = _sample_one_per_company(stuck, n)
+    companies = {r["watchlist_company"] for r in sample}
+    print(f"[workday-diagnostic] WORKDAY_ROLLUP_DIAGNOSTIC={n}: sampling "
+          f"{len(sample)}/{len(stuck)} stuck rows across {len(companies)} "
+          f"companies. Read-only -- nothing will be written.")
+
+    status_counts = {}
+    resolved_preview = []
+
+    def probe_one(row):
+        company, ats_id, url = row["watchlist_company"], row["ats_id"], row.get("url")
+        if not url:
+            return company, ats_id, url, None, "NO_URL", None
+        detail_url = _workday_detail_url(url)
+        if detail_url is None:
+            return company, ats_id, url, None, "BAD_URL_SHAPE", None
+        try:
+            payload = _workday_get_detail(detail_url)
+        except Exception as e:
+            return company, ats_id, url, detail_url, _workday_status_label(e), None
+        jpi = payload.get("jobPostingInfo") or {}
+        location = _workday_format_locations(jpi.get("location"), jpi.get("additionalLocations"))
+        return company, ats_id, url, detail_url, "200", location
+
+    with ThreadPoolExecutor(max_workers=_WORKDAY_MAX_WORKERS) as pool:
+        futures = [pool.submit(probe_one, row) for row in sample]
+        for future in as_completed(futures):
+            company, ats_id, url, detail_url, status, location = future.result()
+            print(f"[workday-diagnostic] {company} | {url} | "
+                  f"{detail_url or '(not constructed)'} | status={status}")
+            status_counts[status] = status_counts.get(status, 0) + 1
+            if location:
+                resolved_preview.append((company, ats_id, location))
+
+    counts_str = ", ".join(f"{k}: {v}" for k, v in sorted(status_counts.items()))
+    print(f"[workday-diagnostic] summary -- {counts_str}")
+    if resolved_preview:
+        print("[workday-diagnostic] resolved locations (NOT applied, read-only):")
+        for company, ats_id, location in resolved_preview:
+            print(f"  {company}/{ats_id}: {location}")
+    print("[workday-diagnostic] done -- no fact_rows/dim_rows mutation, no DB writes.")
+# ==============================================================================
+# END TEMPORARY -- WORKDAY_ROLLUP_DIAGNOSTIC mode (see markers below too).
+# ==============================================================================
+
+
+def resolve_workday_rollups(fact_rows, dim_rows):
+    """Resolve Workday "N Locations" rollups to real cities using each
+    row's own stored `url`, and apply the result to `fact_rows`/`dim_rows`
+    in place.
+
+    Must run before `refresh_location_flags`: that RPC classifies WA /
+    remote-WA purely from the `location` text, and a rollup string never
+    contains a place name, so an unresolved row can never flag correctly no
+    matter where its real locations are -- resolving first is what lets a
+    genuinely-Seattle rollup flag on the same run it's found.
+
+    Expected to run after both dedupe() calls, so each (watchlist_company,
+    ats_id) is visited once. Non-fatal throughout: every failure is caught,
+    logged, and left as "N Locations" to retry next run -- this function
+    must never raise past its own boundary or call sys.exit. Self-limiting:
+    a row that resolves stops matching `_WORKDAY_ROLLUP_RE`, so this pass's
+    own workload shrinks on every run that makes progress.
+    """
+    # TEMPORARY (WORKDAY_ROLLUP_DIAGNOSTIC) -- read the opt-in env var here;
+    # remove this line when ripping out the diagnostic block above.
+    diagnostic_n = os.environ.get("WORKDAY_ROLLUP_DIAGNOSTIC")
+
+    stuck = [
+        d for d in dim_rows
+        if d.get("ats_type") == "workday"
+        and isinstance(d.get("location"), str)
+        and _WORKDAY_ROLLUP_RE.match(d["location"])
+    ]
+    if not stuck:
+        return
+
+    # TEMPORARY (WORKDAY_ROLLUP_DIAGNOSTIC) -- sample-and-log, then return
+    # before any mutation. Remove this whole `if` when ripping out the
+    # diagnostic block above.
+    if diagnostic_n:
+        try:
+            diagnostic_n = int(diagnostic_n)
+        except ValueError:
+            print(f"WARN: WORKDAY_ROLLUP_DIAGNOSTIC={diagnostic_n!r} is not "
+                  f"an integer, ignoring it and running normally.")
+            diagnostic_n = None
+    if diagnostic_n:
+        _run_workday_rollup_diagnostic(stuck, diagnostic_n)
+        return
+
+    print(f"Resolving {len(stuck)} Workday location rollups...")
+
+    def resolve_one(row):
+        key = (row["watchlist_company"], row["ats_id"])
+        try:
+            url = row.get("url")
+            if not url:
+                return key, None
+            detail_url = _workday_detail_url(url)
+            if detail_url is None:
+                print(f"  WARN {key[0]}/{key[1]}: url doesn't fit the expected "
+                      f"Workday job-path shape, skipping: {url!r}")
+                return key, None
+            payload = _workday_get_detail(detail_url)
+            jpi = payload.get("jobPostingInfo") or {}
+            location = _workday_format_locations(
+                jpi.get("location"), jpi.get("additionalLocations")
+            )
+            if not location or _WORKDAY_ROLLUP_RE.match(location):
+                return key, None
+            return key, location
+        except Exception as e:
+            print(f"  WARN {key[0]}/{key[1]}: detail fetch failed "
+                  f"(status={_workday_status_label(e)}), leaving unresolved: {e}")
+            return key, None
+
+    resolved = {}
+    with ThreadPoolExecutor(max_workers=_WORKDAY_MAX_WORKERS) as pool:
+        futures = [pool.submit(resolve_one, row) for row in stuck]
+        for future in as_completed(futures):
+            key, location = future.result()
+            if location:
+                resolved[key] = location
+
+    if not resolved:
+        print(f"  resolved 0/{len(stuck)} (all failed or still rolled up)")
+        return
+
+    for row in fact_rows:
+        key = (row["watchlist_company"], row["ats_id"])
+        if key in resolved:
+            row["location"] = resolved[key]
+    for row in dim_rows:
+        key = (row["watchlist_company"], row["ats_id"])
+        if key in resolved:
+            row["location"] = resolved[key]
+
+    print(f"  resolved {len(resolved)}/{len(stuck)} "
+          f"({len(stuck) - len(resolved)} unresolved, retry next run)")
 # -----------------------------------------------------------------------------
 
 # --- Area classification (v6 - inside Title_Role_Rules_v7) -----------------------------------
@@ -719,6 +1029,8 @@ def main():
     if not fact_rows:
         print("ERROR: no rows pulled from any company; aborting before write.")
         sys.exit(1)
+
+    resolve_workday_rollups(fact_rows, dim_rows)
 
     def upsert_chunked(table, rows, conflict, size=500):
         for i in range(0, len(rows), size):

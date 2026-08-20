@@ -4,6 +4,18 @@ on:
   schedule:
     - cron: "17 9 * * *"   # ~09:17 UTC (2 AM PDT); off the hour to dodge queue contention
   workflow_dispatch:        # lets you run it manually from the Actions tab
+    inputs:
+      # TEMPORARY -- for the WORKDAY_ROLLUP_DIAGNOSTIC mode in
+      # fetch_watchlist_jobs.py's resolve_workday_rollups(). Remove this
+      # input (and the env line below that reads it) together with that
+      # diagnostic code once the Actions-IP-block question is answered.
+      workday_rollup_diagnostic:
+        description: >
+          TEMPORARY diagnostic: row count (e.g. 20) to sample-and-log stuck
+          Workday "N Locations" rows instead of resolving them -- read-only,
+          no DB writes. Leave blank for a normal run.
+        required: false
+        default: ""
 
 jobs:
   fetch:
@@ -23,4 +35,7 @@ jobs:
           JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
           JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
           JOBS_SUPABASE_DB_URL: ${{ secrets.JOBS_SUPABASE_DB_URL }}
+          # TEMPORARY -- see workflow_dispatch.inputs above. Empty string on
+          # a scheduled (non-manual) run, which the Python side treats as unset.
+          WORKDAY_ROLLUP_DIAGNOSTIC: ${{ github.event.inputs.workday_rollup_diagnostic }}
         run: python projects/watchlist-jobs/fetch_watchlist_jobs.py
