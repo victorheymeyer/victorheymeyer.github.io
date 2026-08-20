@@ -414,7 +414,7 @@ function renderTable() {
     tr.innerHTML =
       '<td class="company">' + JobDetail.esc(r.display_name || r.watchlist_company) + '</td>' +
       '<td class="jobtitle" title="' + JobDetail.esc(r.title || "") + '">' + JobDetail.esc(r.title || "(no title)") + badges + '</td>' +
-      '<td>' + (link ? '<a href="' + JobDetail.esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">view</a>' : "") + '</td>';
+      '<td>' + (link ? '<a href="' + JobDetail.esc(link) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" data-company="' + JobDetail.esc(r.watchlist_company || "") + '" data-ats-id="' + JobDetail.esc(r.ats_id || "") + '">view</a>' : "") + '</td>';
     tr.onclick = () => toggleRow(key, r, tr);
     tbody.appendChild(tr);
 
@@ -512,5 +512,6 @@ function wireControls() {
 
 init();
 </script>
+<script src="/telemetry.js"></script>
 </body>
 </html>
