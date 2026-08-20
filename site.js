@@ -3,6 +3,14 @@
 // this script picks up the change automatically. Paths are absolute from the
 // domain root, so they work from any page depth.
 (function () {
+  // Cache-busting: Cloudflare/GitHub Pages cache /site.js and /telemetry.js
+  // for hours, so a deploy can leave browsers running stale code long after
+  // the new version is live. Bump the ?v= on the <script src="/site.js">
+  // tag in each HTML page when site.js or telemetry.js changes; that new
+  // URL is a cache miss everywhere, and this line forwards the same query
+  // string onto telemetry.js so both scripts bust together from one edit.
+  const SCRIPT_VERSION = (document.currentScript && new URL(document.currentScript.src, location.href).search) || "";
+
   const BRAND = { label: "Seattle Jobs", href: "/projects/watchlist-jobs/" };
   const SITE_NAV = [
     { label: "My Jobs", href: "/projects/watchlist-jobs/my-jobs.html" },
@@ -100,7 +108,7 @@
   if (!document.querySelector('script[src="/telemetry.js"]')) {
     const telemetry = document.createElement("script");
     telemetry.defer = true;
-    telemetry.src = "/telemetry.js";
+    telemetry.src = "/telemetry.js" + SCRIPT_VERSION;
     document.head.appendChild(telemetry);
   }
 })();
