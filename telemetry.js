@@ -111,7 +111,15 @@
     var client = null;
     try {
       if (window.supabase && window.supabase.createClient) {
-        client = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+        // Never read or persist an auth session here: telemetry must always
+        // write as anon, even when the visitor is signed in elsewhere on the
+        // site. supabase-js otherwise shares one localStorage session across
+        // every client on this project, which would silently upgrade these
+        // inserts to the authenticated role and get rejected (anon is the
+        // only role granted INSERT on event_logs).
+        client = window.supabase.createClient(SUPABASE_URL, ANON_KEY, {
+          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+        });
       }
     } catch (e) {
       client = null;
