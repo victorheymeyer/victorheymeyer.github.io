@@ -89,8 +89,18 @@
 
   nav.appendChild(inner);
 
-  // Mount into a <div id="siteNav"></div> placeholder if present, else prepend to body.
+  // Nav injection is opt-in: only replace a <div id="siteNav"></div> mount if
+  // the page has one. Pages without a mount get no nav from this script.
   const mount = document.getElementById("siteNav");
   if (mount) mount.replaceWith(nav);
-  else document.body.insertBefore(nav, document.body.firstChild);
+
+  // Every page that loads site.js gets telemetry automatically, so no page
+  // needs its own <script src="/telemetry.js"> tag. Guarded so the loader
+  // never adds a second copy.
+  if (!document.querySelector('script[src="/telemetry.js"]')) {
+    const telemetry = document.createElement("script");
+    telemetry.defer = true;
+    telemetry.src = "/telemetry.js";
+    document.head.appendChild(telemetry);
+  }
 })();

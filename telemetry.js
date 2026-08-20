@@ -1,6 +1,9 @@
 (function () {
   "use strict";
 
+  if (window.__telemetryLoaded) return;
+  window.__telemetryLoaded = true;
+
   var SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
   var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
   var SESSION_TIMEOUT_MS = 30 * 60 * 1000;
@@ -8,6 +11,7 @@
   var SESSION_KEY = "th_session_id";
   var LAST_ACTIVE_KEY = "th_last_active";
   var BOT_RE = /bot|crawl|spider|slurp|mediapartners|headless|phantom|selenium/i;
+  var CDN_SRC = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
 
   function uuid() {
     if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
@@ -47,24 +51,6 @@
     }
   }
 
-  var client = null;
-  try {
-    if (window.supabase && window.supabase.createClient) {
-      client = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
-    }
-  } catch (e) {
-    client = null;
-  }
-
-  function send(row) {
-    if (!client) return;
-    try {
-      client.from("event_logs").insert(row).then(function () {}, function () {});
-    } catch (e) {
-      // telemetry must never break the page
-    }
-  }
-
   function baseFields() {
     return {
       visitor_id: getVisitorId(),
@@ -75,38 +61,87 @@
     };
   }
 
-  function trackPageview() {
-    var row = baseFields();
-    row.event_type = "pageview";
-    row.page_url = window.location.href;
-    row.referrer = document.referrer || null;
-    send(row);
-  }
+  function start(client) {
+    function send(row) {
+      if (!client) return;
+      try {
+        client.from("event_logs").insert(row).then(function () {}, function () {});
+      } catch (e) {
+        // telemetry must never break the page
+      }
+    }
 
-  function trackClick(anchor) {
-    var row = baseFields();
-    row.event_type = "click";
-    row.page_url = window.location.href;
-    row.target_url = anchor.href;
-    var company = anchor.getAttribute("data-company");
-    var atsId = anchor.getAttribute("data-ats-id");
-    if (company) row.watchlist_company = company;
-    if (atsId) row.ats_id = atsId;
-    send(row);
-  }
+    function trackPageview() {
+      var row = baseFields();
+      row.event_type = "pageview";
+      row.page_url = window.location.href;
+      row.referrer = document.referrer || null;
+      send(row);
+    }
 
-  document.addEventListener("click", function (e) {
+    function trackClick(anchor) {
+      var row = baseFields();
+      row.event_type = "click";
+      row.page_url = window.location.href;
+      row.target_url = anchor.href;
+      var company = anchor.getAttribute("data-company");
+      var atsId = anchor.getAttribute("data-ats-id");
+      if (company) row.watchlist_company = company;
+      if (atsId) row.ats_id = atsId;
+      send(row);
+    }
+
+    document.addEventListener("click", function (e) {
+      try {
+        var anchor = e.target && e.target.closest ? e.target.closest("a[href]") : null;
+        if (anchor) trackClick(anchor);
+      } catch (err) {
+        // swallow
+      }
+    }, true);
+
     try {
-      var anchor = e.target && e.target.closest ? e.target.closest("a[href]") : null;
-      if (anchor) trackClick(anchor);
-    } catch (err) {
+      trackPageview();
+    } catch (e) {
       // swallow
     }
-  }, true);
-
-  try {
-    trackPageview();
-  } catch (e) {
-    // swallow
   }
+
+  function createClientAndStart() {
+    var client = null;
+    try {
+      if (window.supabase && window.supabase.createClient) {
+        client = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+      }
+    } catch (e) {
+      client = null;
+    }
+    start(client);
+  }
+
+  function ensureSupabaseThenStart() {
+    if (window.supabase && window.supabase.createClient) {
+      createClientAndStart();
+      return;
+    }
+    try {
+      var existing = document.querySelector('script[src="' + CDN_SRC + '"]');
+      if (existing) {
+        existing.addEventListener("load", createClientAndStart);
+        existing.addEventListener("error", function () {});
+        return;
+      }
+      var script = document.createElement("script");
+      script.src = CDN_SRC;
+      script.onload = createClientAndStart;
+      script.onerror = function () {
+        // telemetry must never break the page
+      };
+      document.head.appendChild(script);
+    } catch (e) {
+      // swallow
+    }
+  }
+
+  ensureSupabaseThenStart();
 })();
