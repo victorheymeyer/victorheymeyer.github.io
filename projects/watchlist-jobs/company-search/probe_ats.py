@@ -260,6 +260,10 @@ def _is_remote_generic(s):
 def _is_remote_wa(s):
     if not _REMOTE_WORD_RE.search(s):
         return False
+    # DC exclusion here is load-bearing: the word "washington" is genuinely
+    # ambiguous with "Washington, D.C.", so a remote listing that says
+    # "Washington, D.C." must not count as remote_wa. Matches
+    # maybe_remote_wa's WA-word branch exactly.
     wa_branch = (
         bool(_WA_WORD_RE.search(s))
         and not _locale_prefix_blocked(s)
@@ -271,11 +275,10 @@ def _is_remote_wa(s):
 def _is_remote_ny(s):
     if not _REMOTE_WORD_RE.search(s):
         return False
-    ny_branch = (
-        bool(_NY_WORD_RE.search(s))
-        and not _locale_prefix_blocked(s)
-        and not bool(_DC_RE.search(s))
-    )
+    # No DC exclusion here (unlike remote_wa): "new york"/"ny" has no word
+    # collision with DC the way "washington" does, so there's nothing to
+    # guard against.
+    ny_branch = bool(_NY_WORD_RE.search(s)) and not _locale_prefix_blocked(s)
     return ny_branch or bool(_NYC_CITY_RE.search(s)) or _is_remote_generic(s)
 
 
@@ -284,12 +287,10 @@ def _is_remote_ca(s):
         return False
     # Remote-CA: full "California" or a CA city only - no bare "CA" at all
     # (even in postal context), to avoid Canada's CA country code. Stricter
-    # than onsite bay, which allows bare CA in clear US-postal context.
-    ca_branch = (
-        bool(_CA_FULLWORD_RE.search(s))
-        and not _locale_prefix_blocked(s)
-        and not bool(_DC_RE.search(s))
-    )
+    # than onsite bay, which allows bare CA in clear US-postal context. No
+    # DC exclusion (unlike remote_wa): "california"/"ca" has no word
+    # collision with DC, so there's nothing to guard against.
+    ca_branch = bool(_CA_FULLWORD_RE.search(s)) and not _locale_prefix_blocked(s)
     return ca_branch or bool(_BAY_CITY_RE.search(s)) or _is_remote_generic(s)
 
 
