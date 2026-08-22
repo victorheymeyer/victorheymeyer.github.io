@@ -94,6 +94,7 @@
   <h2>Weekly Row Count Trend</h2>
   <p>Each point shows the highest single-day row count seen within that week (handles multiple pulls per week if they happen).</p>
   <canvas id="trend-chart" width="900" height="300"></canvas>
+  <p id="weekly-growth-stats" style="white-space: pre-line;">Loading...</p>
 
   <h2>Monthly Growth (%)</h2>
   <p>Row count growth for each completed calendar month, comparing that month's last snapshot to the previous month's last snapshot. The current (in-progress) month is excluded since it hasn't finished yet.</p>
@@ -214,21 +215,7 @@
       }
       drawTrendChart('daily-trend-chart', dailyData);
 
-      const growth30Day = get30DayGrowth(dailyData);
-      const growthStatsEl = document.getElementById('daily-growth-stats');
-      if (growth30Day && growth30Day.annualizedValue !== null) {
-        const sign = growth30Day.value >= 0 ? '+' : '';
-        const annSign = growth30Day.annualizedValue >= 0 ? '+' : '';
-        const ratio = growth30Day.endValue / growth30Day.startValue;
-        const exponent = 365 / growth30Day.daysElapsed;
-        growthStatsEl.textContent =
-          growth30Day.startLabel + ' → ' + growth30Day.startValue.toLocaleString() + '\n' +
-          growth30Day.endLabel + ' → ' + growth30Day.endValue.toLocaleString() + '\n' +
-          'Growth: ' + sign + growth30Day.value.toFixed(2) + '%  (' + growth30Day.daysElapsed + ' days elapsed)\n' +
-          'Annualized: ' + annSign + growth30Day.annualizedValue.toFixed(1) + '% (' + ratio.toFixed(5) + '^' + exponent.toFixed(3) + ' − 1)';
-      } else {
-        growthStatsEl.textContent = 'Not enough data yet to compute 30-day growth.';
-      }
+      renderGrowthStats('daily-growth-stats', computeGrowthStats(dailyData));
 
       // --- Weekly chart data prep ---
       // Group dates by week (using the Monday of that week as the bucket
@@ -254,6 +241,7 @@
       const weekKeys = Object.keys(maxRowsByWeek).sort();
       const weeklyData = weekKeys.map(week => ({ label: week, value: maxRowsByWeek[week] }));
       drawTrendChart('trend-chart', weeklyData);
+      renderGrowthStats('weekly-growth-stats', computeGrowthStats(weeklyData));
 
       // --- Monthly growth chart data prep ---
       const monthlyGrowthData = buildMonthlyGrowthData(rowCountByDate);
@@ -444,14 +432,13 @@
       return growthData;
     }
 
-    // Growth across the daily chart's 30-day window: earliest vs. latest
-    // known row count within that window (skipping over any gap days
-    // with no snapshot), so it lines up with what the chart is showing.
-    // Also compounds that rate out to a 365-day equivalent, using the
-    // actual number of days elapsed between the two snapshots (not a
-    // fixed 30), since gap days mean the window isn't always exactly 30.
-    function get30DayGrowth(dailyData) {
-      const known = dailyData.filter(d => d.value !== null && d.value !== undefined);
+    // Growth across a chart's data window: earliest vs. latest known
+    // value in the series (skipping over any gaps), plus that rate
+    // compounded out to a 365-day equivalent using the actual number
+    // of days elapsed between the two points (not the nominal window
+    // size), since gaps mean the real span isn't always the same.
+    function computeGrowthStats(dataPoints) {
+      const known = dataPoints.filter(d => d.value !== null && d.value !== undefined);
       if (known.length < 2) return null;
 
       const start = known[0];
@@ -470,6 +457,27 @@
         endLabel: end.label, endValue: end.value,
         daysElapsed: daysElapsed, value: growthPct, annualizedValue: annualizedValue
       };
+    }
+
+    // Renders a computeGrowthStats() result into the given element as
+    // start/end values, the raw growth over the window, and that rate
+    // compounded out to a year.
+    function renderGrowthStats(elementId, stats) {
+      const el = document.getElementById(elementId);
+      if (!stats || stats.annualizedValue === null) {
+        el.textContent = 'Not enough data yet to compute growth.';
+        return;
+      }
+
+      const sign = stats.value >= 0 ? '+' : '';
+      const annSign = stats.annualizedValue >= 0 ? '+' : '';
+      const ratio = stats.endValue / stats.startValue;
+      const exponent = 365 / stats.daysElapsed;
+      el.textContent =
+        stats.startLabel + ' → ' + stats.startValue.toLocaleString() + '\n' +
+        stats.endLabel + ' → ' + stats.endValue.toLocaleString() + '\n' +
+        'Growth: ' + sign + stats.value.toFixed(2) + '%  (' + stats.daysElapsed + ' days elapsed)\n' +
+        'Annualized: ' + annSign + stats.annualizedValue.toFixed(1) + '% (' + ratio.toFixed(5) + '^' + exponent.toFixed(3) + ' − 1)';
     }
 
     // Bar chart for monthly growth %, with bars extending up or down
