@@ -1,0 +1,44 @@
+name: Probe ATS Companies Daily
+
+on:
+  schedule:
+    # ~18:37 UTC (11:37 AM PDT) -- several hours clear of the other daily
+    # crons in this repo (watchlist-jobs 09:17, fetch-airbnb-jobs 10:00,
+    # fetch-pricing 11:00, capture-table-stats 12:15 UTC), off the hour to
+    # dodge queue contention.
+    - cron: "37 18 * * *"
+  workflow_dispatch:        # lets you run it manually from the Actions tab
+    inputs:
+      cap_override:
+        description: >
+          Optional per-ATS cap for testing (e.g. 2 caps every ATS to ~2
+          companies instead of the real 100/20 production caps). Maps to
+          PROBE_CAP_OVERRIDE. Leave blank for a normal, uncapped run.
+        required: false
+        default: ""
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r projects/watchlist-jobs/company-search/requirements.txt
+          pip install projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl
+
+      - name: Run probe
+        env:
+          JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
+          JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
+          # Empty string on a scheduled (non-manual) run, which
+          # probe_ats.py's main() treats as unset -- uncapped, real 100/20
+          # caps from next_probe_batch(). Set only on a manual dispatch
+          # where cap_override was provided.
+          PROBE_CAP_OVERRIDE: ${{ github.event.inputs.cap_override }}
+        run: python projects/watchlist-jobs/company-search/probe_ats.py
