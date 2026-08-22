@@ -771,6 +771,43 @@ def classify_level(title):
     return None
 # -----------------------------------------------------------------------------
 
+def classify_pull_error(error_message):
+    """Map a raw pull error string to (error_code, outcome).
+    Buckets drive response: BLOCKED = back off, REMOVED = fix/drop the slug,
+    CONFIG = fix watchlist data, ERROR = investigate, TRANSIENT = self-recovers,
+    ignore. Matching is substring on the error_message the loop builds
+    ("ExceptionType: message"). Order matters: specific before generic.
+    """
+    m = (error_message or "").lower()
+    # --- config / data problems (never hit the network) ---
+    if "no scraper" in m or "unknown ats" in m:
+        return "CONFIG", "CONFIG"
+    if "url must look like" in m:                 # bare Workday tenant/site slug
+        return "CONFIG", "CONFIG"
+    # --- dead / moved boards ---
+    if "companynotfounderror" in m or "not found" in m or " 404" in m:
+        return "NOT_FOUND", "REMOVED"
+    # --- explicit block signals ---
+    if " 429" in m or "too many requests" in m or "rate limit" in m:
+        return "RATE_LIMITED", "BLOCKED"
+    if "just a moment" in m or "attention required" in m or "cf-" in m or "challenge" in m:
+        return "CHALLENGE", "BLOCKED"
+    # --- Workday "gave up after N retries" ---
+    # Proven transient in testing (recover on retest, not blocks). Treat as
+    # TRANSIENT, not BLOCKED, so they don't cry wolf. A real block shows up as
+    # 429/challenge above.
+    if "gave up after" in m and "retries" in m:
+        return "TRANSIENT", "ERROR"
+    # --- transport / server ---
+    if "timeout" in m or "timed out" in m:
+        return "TIMEOUT", "BLOCKED"
+    if any(s in m for s in (" 500", " 502", " 503", " 504", "server error")):
+        return "SERVER_ERROR", "ERROR"
+    if " 403" in m or "forbidden" in m:
+        return "FORBIDDEN", "REMOVED"
+    return "OTHER", "ERROR"
+# -----------------------------------------------------------------------------
+
 snapshot_date = datetime.now(SEATTLE_TZ).date().isoformat()
 
 FACT_COLS = ["snapshot_date", "watchlist_company", "ats_id", "title", "location", "posted_at",
@@ -902,11 +939,15 @@ def main():
         if ats not in SCRAPERS:
             print(f"SKIP {company:12s}: unknown ats '{ats}' (no scraper)")
             failures.append(company)
+            msg = f"unknown ats '{ats}' (no scraper)"
+            code, outcome = classify_pull_error(msg)
             failure_rows.append({
                 "snapshot_date": snapshot_date,
                 "watchlist_company": company,
                 "ats": ats,
-                "error_message": f"unknown ats '{ats}' (no scraper)",
+                "error_message": msg,
+                "error_code": code,
+                "outcome": outcome,
             })
             continue
         try:
@@ -1009,11 +1050,14 @@ def main():
             error_message = f"{type(e).__name__}: {e}"
             print(f"FAIL {company:12s} ({ats}/{slug}): {error_message}")
             failures.append(company)
+            code, outcome = classify_pull_error(error_message)
             failure_rows.append({
                 "snapshot_date": snapshot_date,
                 "watchlist_company": company,
                 "ats": ats,
                 "error_message": error_message[:2000],
+                "error_code": code,
+                "outcome": outcome,
             })
 
     def dedupe(rows, keys):
