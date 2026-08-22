@@ -1,7 +1,9 @@
-"""Company-discovery probe, steps 3a+3b: fetch + classify one company
-(probe_one, print-only) and write its result to ats_probe_results
-(write_probe_result). Still no queue, no loop - that's 3c. See the step
-1-4 hand-off notes for the full pipeline.
+"""Company-discovery probe, steps 3a+3b+3c: fetch + classify one company
+(probe_one, print-only), write its result to ats_probe_results
+(write_probe_result), and run the full daily batch (main()) - call
+next_probe_batch(), probe + write each company immediately, sleep between
+companies, print a run summary. See the step 1-4 hand-off notes for the
+full pipeline.
 
 Two things are FAITHFUL to production:
   - SOFTWARE_KEYWORDS / TECH_EXTRA_KEYWORDS and seattle_rec(): copied
@@ -10,13 +12,14 @@ Two things are FAITHFUL to production:
     SQL (pulled via pg_get_functiondef), NOT probe_preview.py's
     approximate regexes. See the "Location logic" section below.
 
-Usage: python probe_ats.py
+Usage: python probe_ats.py   (requires JOBS_SUPABASE_URL / JOBS_SUPABASE_SERVICE_KEY)
 """
 
+import os
 import re
 import sys
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 
 # Location strings routinely carry non-ASCII characters (accented city
 # names, etc.); Windows consoles default to cp1252, which can't encode all
@@ -454,7 +457,9 @@ def _print_row(r):
         print(f"    unmatched: {r['unmatched_locations']}")
 
 
-if __name__ == "__main__":
+def _run_3a_demo():
+    """The 3a verification set (kept for manual re-checking of probe_one()
+    alone; not the script's default entrypoint - see main())."""
     VERIFICATION_SET = [
         # Known software, Seattle-present -> expect Yes-Go.
         ("greenhouse", "amperity"),
@@ -472,3 +477,103 @@ if __name__ == "__main__":
     ]
     for ats, identifier in VERIFICATION_SET:
         _print_row(probe_one(ats, identifier))
+
+
+# ============================================================================
+# main() - step 3c-1: the daily loop. Calls next_probe_batch(), probes and
+# writes each company immediately (never batched), sleeps between
+# companies, prints a run summary. Write failures are caught per-company
+# and logged (see the try/except in the loop below) rather than aborting
+# the run.
+# ============================================================================
+
+# Gentle-on-providers delay between companies. Paginated ATS (multi-request
+# fetches, already observed rate-limiting Citi in 3a) get a longer gap.
+DEFAULT_SLEEP_SECONDS = 1.0
+PAGINATED_SLEEP_SECONDS = 2.0
+
+# Testing-only: set PROBE_CAP_OVERRIDE=2 to trim each ATS's slice of the
+# batch to N companies (queue order preserved) instead of the function's
+# real 100/20 caps. Unset in production - next_probe_batch()'s own caps
+# apply untouched.
+_CAP_OVERRIDE_ENV = "PROBE_CAP_OVERRIDE"
+
+
+def _fetch_batch(cap_override=None):
+    resp = _get_client().rpc("next_probe_batch", {}).execute()
+    batch = resp.data or []
+    if cap_override is None:
+        return batch
+    trimmed = []
+    seen_per_ats = defaultdict(int)
+    for entry in batch:
+        ats = entry["ats"].lower()
+        if seen_per_ats[ats] < cap_override:
+            trimmed.append(entry)
+            seen_per_ats[ats] += 1
+    return trimmed
+
+
+def main():
+    cap_env = os.environ.get(_CAP_OVERRIDE_ENV)
+    cap_override = int(cap_env) if cap_env else None
+    if cap_override is not None:
+        print(f"** {_CAP_OVERRIDE_ENV}={cap_override} - testing cap, NOT production caps **")
+
+    batch = _fetch_batch(cap_override=cap_override)
+    print(f"Batch: {len(batch)} companies")
+
+    t_start = time.time()
+    outcome_counts = defaultdict(lambda: defaultdict(int))
+    error_rows = []
+    write_failures = []
+
+    for entry in batch:
+        ats = entry["ats"]
+        slug = entry["slug"]
+        identifier = entry["identifier"]
+        directory_url = entry["directory_url"]
+        company = entry["company"]
+
+        row = probe_one(ats, identifier)
+        _print_row(row)
+        outcome_counts[ats][row["status"]] += 1
+        if row["status"] == "error":
+            error_rows.append((ats, slug, row.get("http_status"), row.get("error_detail")))
+
+        # Write failure (transient Supabase/network error) -> skip this
+        # company, log it, keep going. Do not abort the run: the exclusion
+        # query is self-healing (no row -> reappears in the next batch), so
+        # aborting would only waste the companies already written this run.
+        try:
+            write_probe_result(row, slug=slug, url=directory_url, company=company)
+        except Exception as e:
+            write_failures.append((ats, slug, str(e)))
+            print(f"    WRITE FAILED for {ats}/{slug}: {e}")
+
+        time.sleep(PAGINATED_SLEEP_SECONDS if ats.lower() in PAGINATED_ATS else DEFAULT_SLEEP_SECONDS)
+
+    elapsed = time.time() - t_start
+    _print_run_summary(batch, outcome_counts, elapsed, error_rows, write_failures)
+
+
+def _print_run_summary(batch, outcome_counts, elapsed, error_rows, write_failures):
+    print("\n===== RUN SUMMARY =====")
+    for ats in sorted(outcome_counts):
+        counts = outcome_counts[ats]
+        parts = ", ".join(f"{status}={n}" for status, n in sorted(counts.items()))
+        print(f"  {ats:16} {parts}")
+    print(f"  total companies probed: {len(batch)}")
+    print(f"  total wall time: {elapsed:.1f}s")
+    if error_rows:
+        print("  errors:")
+        for ats, slug, http_status, detail in error_rows:
+            print(f"    [{ats}] {slug} (HTTP {http_status}): {detail}")
+    if write_failures:
+        print("  WRITE FAILURES:")
+        for ats, slug, msg in write_failures:
+            print(f"    [{ats}] {slug}: {msg}")
+
+
+if __name__ == "__main__":
+    main()
