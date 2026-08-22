@@ -30,3 +30,7 @@ pg_cron are UTC/GMT-only with no per-job Seattle setting. Trigger times can
 never be Seattle-local and will drift ~1hr at DST. This is permanent. Gate on
 the Seattle day inside the job if a specific day boundary matters; never treat
 the cron trigger time as authoritative.
+
+## ats-scrapers fork (contribution scratch, not production)
+
+The `ats-scrapers` clone at `C:\Users\vheym\ats-scrapers` is throwaway scratch for an upstream PR (Workday startDate/endDate), NOT a source for this pipeline. The production scraper is the vendored wheel at `projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl`; never vendor or install from that clone.
