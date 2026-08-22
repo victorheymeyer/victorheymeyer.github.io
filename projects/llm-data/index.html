@@ -89,10 +89,15 @@
   <h2>Daily Row Count Trend (Last 30 Days)</h2>
   <p>Shows the most recent 30 calendar days. Days with no snapshot are skipped, the line connects the nearest days that do have data.</p>
   <canvas id="daily-trend-chart" width="900" height="300"></canvas>
+  <p id="daily-growth-stats" style="white-space: pre-line;">Loading...</p>
 
   <h2>Weekly Row Count Trend</h2>
   <p>Each point shows the highest single-day row count seen within that week (handles multiple pulls per week if they happen).</p>
   <canvas id="trend-chart" width="900" height="300"></canvas>
+
+  <h2>Monthly Growth (%)</h2>
+  <p>Row count growth for each completed calendar month, comparing that month's last snapshot to the previous month's last snapshot. The current (in-progress) month is excluded since it hasn't finished yet.</p>
+  <canvas id="monthly-growth-chart" width="900" height="300"></canvas>
 
   <h2>Sample Data (20 models, most recent snapshot)</h2>
   <div class="table-wrapper">
@@ -209,6 +214,22 @@
       }
       drawTrendChart('daily-trend-chart', dailyData);
 
+      const growth30Day = get30DayGrowth(dailyData);
+      const growthStatsEl = document.getElementById('daily-growth-stats');
+      if (growth30Day && growth30Day.annualizedValue !== null) {
+        const sign = growth30Day.value >= 0 ? '+' : '';
+        const annSign = growth30Day.annualizedValue >= 0 ? '+' : '';
+        const ratio = growth30Day.endValue / growth30Day.startValue;
+        const exponent = 365 / growth30Day.daysElapsed;
+        growthStatsEl.textContent =
+          growth30Day.startLabel + ' → ' + growth30Day.startValue.toLocaleString() + '\n' +
+          growth30Day.endLabel + ' → ' + growth30Day.endValue.toLocaleString() + '\n' +
+          'Growth: ' + sign + growth30Day.value.toFixed(2) + '%  (' + growth30Day.daysElapsed + ' days elapsed)\n' +
+          'Annualized: ' + annSign + growth30Day.annualizedValue.toFixed(1) + '% (' + ratio.toFixed(5) + '^' + exponent.toFixed(3) + ' − 1)';
+      } else {
+        growthStatsEl.textContent = 'Not enough data yet to compute 30-day growth.';
+      }
+
       // --- Weekly chart data prep ---
       // Group dates by week (using the Monday of that week as the bucket
       // key), then take the max row count seen within each week. This
@@ -233,6 +254,10 @@
       const weekKeys = Object.keys(maxRowsByWeek).sort();
       const weeklyData = weekKeys.map(week => ({ label: week, value: maxRowsByWeek[week] }));
       drawTrendChart('trend-chart', weeklyData);
+
+      // --- Monthly growth chart data prep ---
+      const monthlyGrowthData = buildMonthlyGrowthData(rowCountByDate);
+      drawGrowthBarChart('monthly-growth-chart', monthlyGrowthData);
 
       // Now pull every row for the latest snapshot date, so we can
       // randomly sample 20 from the full set rather than just a
@@ -372,6 +397,167 @@
         ctx.beginPath();
         ctx.arc(x, y, 3, 0, Math.PI * 2);
         ctx.fill();
+      });
+    }
+
+    // Buckets snapshot dates by calendar month, keeping each month's
+    // last available snapshot as that month's row count. Shared by the
+    // completed-months bar chart and the current-month-to-date growth
+    // figure below the daily chart.
+    function getMonthEndCounts(rowCountByDate) {
+      const dates = Object.keys(rowCountByDate).sort();
+      const monthEndCount = {};
+      const monthOrder = [];
+      dates.forEach(date => {
+        const monthKey = date.slice(0, 7);
+        if (!(monthKey in monthEndCount)) monthOrder.push(monthKey);
+        monthEndCount[monthKey] = rowCountByDate[date];
+      });
+      return { monthOrder, monthEndCount };
+    }
+
+    function formatMonthLabel(monthKey) {
+      const d = new Date(monthKey + '-01T00:00:00Z');
+      return d.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    }
+
+    // Percent growth vs. the previous month's row count. Only months
+    // that have fully elapsed (strictly before the real-world current
+    // month) are included, since a month still in progress doesn't
+    // have a final count to compare with.
+    function buildMonthlyGrowthData(rowCountByDate) {
+      const { monthOrder, monthEndCount } = getMonthEndCounts(rowCountByDate);
+      const currentMonthKey = new Date().toISOString().slice(0, 7);
+
+      const growthData = [];
+      for (let i = 1; i < monthOrder.length; i++) {
+        const monthKey = monthOrder[i];
+        if (monthKey >= currentMonthKey) continue;
+
+        const prevValue = monthEndCount[monthOrder[i - 1]];
+        const currValue = monthEndCount[monthKey];
+        if (!prevValue) continue;
+
+        const growthPct = ((currValue - prevValue) / prevValue) * 100;
+        growthData.push({ label: formatMonthLabel(monthKey), value: growthPct });
+      }
+      return growthData;
+    }
+
+    // Growth across the daily chart's 30-day window: earliest vs. latest
+    // known row count within that window (skipping over any gap days
+    // with no snapshot), so it lines up with what the chart is showing.
+    // Also compounds that rate out to a 365-day equivalent, using the
+    // actual number of days elapsed between the two snapshots (not a
+    // fixed 30), since gap days mean the window isn't always exactly 30.
+    function get30DayGrowth(dailyData) {
+      const known = dailyData.filter(d => d.value !== null && d.value !== undefined);
+      if (known.length < 2) return null;
+
+      const start = known[0];
+      const end = known[known.length - 1];
+      if (!start.value) return null;
+
+      const growthPct = ((end.value - start.value) / start.value) * 100;
+
+      const daysElapsed = Math.round((new Date(end.label + 'T00:00:00Z') - new Date(start.label + 'T00:00:00Z')) / (1000 * 60 * 60 * 24));
+      const annualizedValue = daysElapsed > 0
+        ? (Math.pow(end.value / start.value, 365 / daysElapsed) - 1) * 100
+        : null;
+
+      return {
+        startLabel: start.label, startValue: start.value,
+        endLabel: end.label, endValue: end.value,
+        daysElapsed: daysElapsed, value: growthPct, annualizedValue: annualizedValue
+      };
+    }
+
+    // Bar chart for monthly growth %, with bars extending up or down
+    // from a zero baseline depending on sign.
+    function drawGrowthBarChart(canvasId, data) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      const padding = { top: 20, right: 30, bottom: 50, left: 60 };
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+
+      ctx.clearRect(0, 0, width, height);
+
+      if (data.length === 0) {
+        ctx.font = '14px Georgia';
+        ctx.fillStyle = '#333';
+        ctx.fillText('Not enough data yet for a full month of growth.', padding.left, height / 2);
+        return;
+      }
+
+      const values = data.map(d => d.value);
+      const maxValue = Math.max(...values, 0);
+      const minValue = Math.min(...values);
+      const hasNegative = minValue < 0;
+      const rangeMin = hasNegative ? minValue : 0;
+      const valueRange = (maxValue - rangeMin) || 1;
+      const yMax = maxValue + valueRange * 0.15;
+      const yMin = hasNegative ? rangeMin - valueRange * 0.15 : 0;
+
+      function yForValue(v) {
+        return padding.top + plotHeight - ((v - yMin) / (yMax - yMin)) * plotHeight;
+      }
+      const zeroY = yForValue(0);
+
+      // Axes
+      ctx.strokeStyle = '#888';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, padding.top);
+      ctx.lineTo(padding.left, padding.top + plotHeight);
+      ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
+      ctx.stroke();
+
+      // Y axis labels (5 ticks)
+      ctx.fillStyle = '#333';
+      ctx.font = '11px Georgia';
+      ctx.textAlign = 'right';
+      const yTicks = 5;
+      for (let t = 0; t <= yTicks; t++) {
+        const value = yMin + (t / yTicks) * (yMax - yMin);
+        const y = yForValue(value);
+        ctx.fillText(value.toFixed(1) + '%', padding.left - 8, y + 4);
+        ctx.strokeStyle = '#eee';
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(padding.left + plotWidth, y);
+        ctx.stroke();
+      }
+
+      // Zero baseline
+      ctx.strokeStyle = '#888';
+      ctx.beginPath();
+      ctx.moveTo(padding.left, zeroY);
+      ctx.lineTo(padding.left + plotWidth, zeroY);
+      ctx.stroke();
+
+      // Bars, one per month, with the value label placed just outside
+      // the bar's far end (above for positive, below for negative).
+      const barSlot = plotWidth / data.length;
+      const barWidth = Math.min(60, barSlot * 0.6);
+      ctx.textAlign = 'center';
+      data.forEach((d, i) => {
+        const xCenter = padding.left + barSlot * (i + 0.5);
+        const y = yForValue(d.value);
+        const barTop = Math.min(y, zeroY);
+        const barHeight = Math.abs(zeroY - y);
+
+        ctx.fillStyle = d.value >= 0 ? '#2a9d5c' : '#d64545';
+        ctx.fillRect(xCenter - barWidth / 2, barTop, barWidth, barHeight);
+
+        ctx.fillStyle = '#333';
+        ctx.font = '11px Georgia';
+        const labelY = d.value >= 0 ? y - 6 : y + 14;
+        ctx.fillText((d.value >= 0 ? '+' : '') + d.value.toFixed(1) + '%', xCenter, labelY);
+
+        ctx.fillText(d.label, xCenter, padding.top + plotHeight + 15);
       });
     }
 
