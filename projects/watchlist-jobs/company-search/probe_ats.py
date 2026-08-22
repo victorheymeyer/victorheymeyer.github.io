@@ -1,6 +1,7 @@
-"""Company-discovery probe, step 3a: fetch + classify one company. Prints
-only -- no writes to Supabase or disk, no queue, no loop. See the step 1-4
-hand-off notes for the full pipeline; this covers 3a only.
+"""Company-discovery probe, steps 3a+3b: fetch + classify one company
+(probe_one, print-only) and write its result to ats_probe_results
+(write_probe_result). Still no queue, no loop - that's 3c. See the step
+1-4 hand-off notes for the full pipeline.
 
 Two things are FAITHFUL to production:
   - SOFTWARE_KEYWORDS / TECH_EXTRA_KEYWORDS and seattle_rec(): copied
@@ -368,6 +369,75 @@ def probe_one(ats, identifier):
         "seattle_rec": rec, "seattle_rec_note": note,
         "secs": round(time.time() - t0, 1),
     }
+
+
+# ============================================================================
+# write_probe_result - step 3b. Writes exactly one row per call; the loop
+# (step 3c) calls this once per company immediately after probing it, never
+# batched, so a mid-run crash resumes cleanly via next_probe_batch()'s
+# exclusion query.
+# ============================================================================
+
+_sb_client = None
+
+
+def _get_client():
+    """Lazy import + init so importing this module for probe_one() alone
+    (3a's print-only use) never requires the supabase package or
+    credentials - only calling write_probe_result() does."""
+    global _sb_client
+    if _sb_client is None:
+        import os
+        from supabase import create_client
+        url = os.environ["JOBS_SUPABASE_URL"]
+        key = os.environ["JOBS_SUPABASE_SERVICE_KEY"]
+        _sb_client = create_client(url, key)
+    return _sb_client
+
+
+def write_probe_result(row, *, slug, url, company):
+    """Insert one probe_one() row into ats_probe_results.
+
+    row: the dict probe_one() returned.
+    slug: the directory slug (NOT the scraper identifier) - this is what
+        next_probe_batch()'s exclusion query and the view's join key match
+        on, so it must be the directory's slug even when identifier was a
+        full Workday URL.
+    url: the identifier that was actually passed to get_scraper() (the
+        Workday URL, or the bare slug for every other ATS) - stored
+        separately to satisfy the table's own `url` NOT NULL column.
+    company: directory company name. probe_one() doesn't carry any of
+        these three - it only knows ats/identifier - so the caller (3c's
+        loop, or this module's own verification block) supplies them from
+        whatever produced the (ats, slug, identifier, company) tuple in
+        the first place (next_probe_batch() in 3c).
+
+    Always INSERTs, never upserts - the table is append-mode, and
+    ats_probe_latest already takes the latest row per (ats, slug) via
+    DISTINCT ON. probed_at is left to the column's own `default now()`
+    rather than set here, to avoid any client/DB clock skew.
+    """
+    payload = {
+        "ats": row["ats"],
+        "slug": slug,
+        "url": url,
+        "company": company,
+        "status": row["status"],
+        "http_status": row.get("http_status"),
+        "error_detail": row.get("error_detail"),
+        "total_jobs": row.get("total_jobs"),
+        "tech_jobs": row.get("tech_jobs"),
+        "sw_jobs": row.get("sw_jobs"),
+        "wa_jobs": row.get("wa_jobs"),
+        "bay_jobs": row.get("bay_jobs"),
+        "nyc_jobs": row.get("nyc_jobs"),
+        "remote_wa_jobs": row.get("remote_wa_jobs"),
+        "remote_ca_jobs": row.get("remote_ca_jobs"),
+        "remote_ny_jobs": row.get("remote_ny_jobs"),
+        "unmatched_locations": row.get("unmatched_locations"),
+    }
+    _get_client().table("ats_probe_results").insert(payload).execute()
+    return payload
 
 
 def _print_row(r):
