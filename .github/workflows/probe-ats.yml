@@ -2,14 +2,14 @@ name: Probe ATS Companies Daily
 
 on:
   schedule:
-    # ~02:07 UTC (~7 PM PDT, evening Seattle time) -- clear of the other
+    # ~01:07 UTC (~6 PM PDT, evening Seattle time) -- clear of the other
     # daily crons in this repo, all clustered overnight Pacific (watchlist-
     # jobs 09:17 UTC/2:17 AM PDT, fetch-airbnb-jobs 10:00/3 AM, fetch-pricing
     # 11:00/4 AM, capture-table-stats 12:15/5:15 AM), off the hour to dodge
     # queue contention. Per CLAUDE.md's cron-limitation note: GitHub Actions
     # cron is UTC-only, so this drifts ~1hr at DST and is never truly
     # Seattle-local -- that's permanent and accepted, not a bug to fix here.
-    - cron: "7 2 * * *"
+    - cron: "7 1 * * *"
   workflow_dispatch:        # lets you run it manually from the Actions tab
     inputs:
       cap_override:
