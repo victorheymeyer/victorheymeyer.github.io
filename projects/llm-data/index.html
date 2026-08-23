@@ -41,6 +41,11 @@
     dd {
       margin: 0;
     }
+    .chart-canvas {
+      width: 100%;
+      height: 300px;
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -88,19 +93,19 @@
 
   <h2>Daily Row Count Trend (Last 30 Days)</h2>
   <p>Shows the most recent 30 calendar days. Days with no snapshot are skipped, the line connects the nearest days that do have data.</p>
-  <canvas id="daily-trend-chart" width="900" height="300"></canvas>
+  <canvas id="daily-trend-chart" class="chart-canvas" width="900" height="300"></canvas>
   <p id="daily-growth-stats" style="white-space: pre-line;">Loading...</p>
 
-  <h2>Weekly Entry Count Trend</h2>
-  <p>Source: LiteLLM.  Entry = specific model/provider</p>
-  <p>Each point shows the highest single-day row count seen within that week (handles multiple pulls per week if they happen).</p>
-  <canvas id="trend-chart" width="900" height="300"></canvas>
+  <h2>AI Model Endpoints</h2>
+  <p>Source: LiteLLM. Each endpoint represents a specific model/provider option.</p>
+  <p>Each point shows the highest single-day entry count seen within that week.</p>
+  <canvas id="trend-chart" class="chart-canvas" width="900" height="300"></canvas>
   <p id="weekly-growth-stats" style="white-space: pre-line;">Loading...</p>
   <p><strong>Note:</strong> the "entry" column is a Routing Key/Model ID, a compound string that bundles the model family, vendor/platform namespace, and sometimes a hosting location or packaging suffix.</p>
 
   <h2>Monthly Growth (%)</h2>
   <p>Row count growth for each completed calendar month, comparing that month's last snapshot to the previous month's last snapshot. The current (in-progress) month is excluded since it hasn't finished yet.</p>
-  <canvas id="monthly-growth-chart" width="900" height="300"></canvas>
+  <canvas id="monthly-growth-chart" class="chart-canvas" width="900" height="300"></canvas>
 
   <h2>Sample Data (20 models, most recent snapshot)</h2>
   <div class="table-wrapper">
@@ -115,6 +120,24 @@
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxZHZyZ3RhaGhlanhxanRsYm1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2Mzk4NTgsImV4cCI6MjA5NzIxNTg1OH0.CM4P4BE1UgS4sAiKC_QPKHqtbvD0oFZ5UKKz7ag9xK8';
 
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Charts are custom canvas drawings sized off their CSS box, so on
+    // window resize we need to redraw them (not just let the browser
+    // stretch the bitmap). Cache the last data used for each chart so
+    // resize can redraw without refetching from Supabase.
+    const chartDataCache = {};
+
+    function redrawCachedCharts() {
+      if (chartDataCache.dailyData) drawTrendChart('daily-trend-chart', chartDataCache.dailyData);
+      if (chartDataCache.weeklyData) drawTrendChart('trend-chart', chartDataCache.weeklyData, 'AI Model Endpoints');
+      if (chartDataCache.monthlyGrowthData) drawGrowthBarChart('monthly-growth-chart', chartDataCache.monthlyGrowthData);
+    }
+
+    let resizeDebounceTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = setTimeout(redrawCachedCharts, 150);
+    });
 
     function pickRandom(array, n) {
       const copy = [...array];
@@ -215,6 +238,7 @@
         const value = rowCountByDate[dayStr] !== undefined ? rowCountByDate[dayStr] : null;
         dailyData.push({ label: dayStr, value: value });
       }
+      chartDataCache.dailyData = dailyData;
       drawTrendChart('daily-trend-chart', dailyData);
 
       renderGrowthStats('daily-growth-stats', computeGrowthStats(dailyData));
@@ -242,11 +266,13 @@
 
       const weekKeys = Object.keys(maxRowsByWeek).sort();
       const weeklyData = weekKeys.map(week => ({ label: week, value: maxRowsByWeek[week] }));
-      drawTrendChart('trend-chart', weeklyData);
+      chartDataCache.weeklyData = weeklyData;
+      drawTrendChart('trend-chart', weeklyData, 'AI Model Endpoints');
       renderGrowthStats('weekly-growth-stats', computeGrowthStats(weeklyData));
 
       // --- Monthly growth chart data prep ---
       const monthlyGrowthData = buildMonthlyGrowthData(rowCountByDate);
+      chartDataCache.monthlyGrowthData = monthlyGrowthData;
       drawGrowthBarChart('monthly-growth-chart', monthlyGrowthData);
 
       // Now pull every row for the latest snapshot date, so we can
@@ -270,16 +296,30 @@
       document.getElementById('provider-list').textContent = providers.join(', ');
     }
 
+    // Sizes a canvas's backing bitmap to match its CSS box (which is
+    // responsive via the .chart-canvas rule) at the device's pixel
+    // ratio, so charts stay sharp and resize with the window. Drawing
+    // code below works in CSS pixels (the returned width/height); the
+    // transform handles mapping that up to the physical bitmap.
+    function fitCanvasToContainer(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const cssWidth = canvas.clientWidth;
+      const cssHeight = canvas.clientHeight;
+      canvas.width = Math.round(cssWidth * dpr);
+      canvas.height = Math.round(cssHeight * dpr);
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { ctx, width: cssWidth, height: cssHeight };
+    }
+
     // Shared chart drawing function. Used for both the daily (fixed
     // 30-slot, gaps allowed) and weekly (one point per week present)
     // charts. Each entry in `data` is { label, value }, where value
     // may be null to indicate a gap that should be skipped when
     // drawing the connecting line, while still reserving its x position.
-    function drawTrendChart(canvasId, data) {
+    function drawTrendChart(canvasId, data, yAxisLabel) {
       const canvas = document.getElementById(canvasId);
-      const ctx = canvas.getContext('2d');
-      const width = canvas.width;
-      const height = canvas.height;
+      const { ctx, width, height } = fitCanvasToContainer(canvas);
       const padding = { top: 20, right: 30, bottom: 50, left: 60 };
       const plotWidth = width - padding.left - padding.right;
       const plotHeight = height - padding.top - padding.bottom;
@@ -326,6 +366,18 @@
       ctx.lineTo(padding.left, padding.top + plotHeight);
       ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
       ctx.stroke();
+
+      // Y axis title, rotated to run vertically alongside the tick labels
+      if (yAxisLabel) {
+        ctx.save();
+        ctx.translate(15, padding.top + plotHeight / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#333';
+        ctx.font = '12px Georgia';
+        ctx.fillText(yAxisLabel, 0, 0);
+        ctx.restore();
+      }
 
       // Y axis labels (5 ticks, dynamically scaled to the data range)
       ctx.fillStyle = '#333';
@@ -486,9 +538,7 @@
     // from a zero baseline depending on sign.
     function drawGrowthBarChart(canvasId, data) {
       const canvas = document.getElementById(canvasId);
-      const ctx = canvas.getContext('2d');
-      const width = canvas.width;
-      const height = canvas.height;
+      const { ctx, width, height } = fitCanvasToContainer(canvas);
       const padding = { top: 20, right: 30, bottom: 50, left: 60 };
       const plotWidth = width - padding.left - padding.right;
       const plotHeight = height - padding.top - padding.bottom;
