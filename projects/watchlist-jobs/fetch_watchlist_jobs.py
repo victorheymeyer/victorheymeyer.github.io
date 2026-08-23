@@ -1024,6 +1024,7 @@ def send_alert_email(failure_rows, snapshot_date):
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "User-Agent": "watchlist-alerts/1.0",
         },
     )
     try:
