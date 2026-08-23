@@ -962,8 +962,8 @@ def send_alert_email(failure_rows, snapshot_date):
 
     # TEMP TEST SCAFFOLDING: fire on any classified failure today. REMOVE after test.
     todays_failures = [r for r in failure_rows if r.get("error_code")]
-
-    if not blocked and not removed_candidates and not repeat_offenders:
+    
+    if not blocked and not removed_candidates and not repeat_offenders and not todays_failures:
         print("Alert email: nothing to report (healthy day), not sending.")
         return
 
