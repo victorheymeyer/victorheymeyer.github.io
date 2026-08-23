@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Pull Failures</title>
+<link rel="stylesheet" href="/styles.css">
+<script defer src="/site.js?v=20260820b"></script>
+<script defer src="/site-footer.js"></script>
+<style>
+  .chart-canvas { width: 100%; height: 320px; display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: var(--sp-16); margin: 0 0 var(--sp-16); font-size: var(--fs-sm); }
+  .legend-item { display: flex; align-items: center; gap: var(--sp-6); }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+</style>
+</head>
+<body>
+<div id="siteNav"></div>
+<div class="wrap">
+  <h1>Pull Failures</h1>
+
+  <div id="loadingBox" class="loading">Checking session...</div>
+
+  <div id="loginBox" class="panel authbox" style="display:none">
+    <h2>Sign in</h2>
+    <div id="loginErr"></div>
+    <form id="loginForm">
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" required autocomplete="email">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" required autocomplete="current-password">
+      </div>
+      <div class="signin-row">
+        <button type="submit" class="clearbtn">Sign in</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="contentBox" style="display:none">
+    <div class="panel">
+      <h2>Daily failures by outcome (last 30 days)</h2>
+      <p class="hint">One bar per Seattle calendar day, segments stacked by outcome. Source: <code>pull_failures_daily_counts</code> (view over <code>pull_failures</code>).</p>
+      <div class="legend" id="chartLegend"></div>
+      <canvas id="failures-chart" class="chart-canvas" width="900" height="320"></canvas>
+      <p id="chartStatus" class="hint"></p>
+    </div>
+  </div>
+
+  <div id="siteFooter"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ---- Config ----
+const SUPABASE_URL = "https://gfwzdluwljtcbvmmkktd.supabase.co";
+const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdmd3pkbHV3bGp0Y2J2bW1ra3RkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2ODA2MjcsImV4cCI6MjA5ODI1NjYyN30.bGjryWzUobX--FFFmBPlEorY8Tb9qpm_aGDEW0ApBps";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, ANON_KEY);
+
+// Fixed order + color per outcome, worst-first so BLOCKED always renders as
+// the bottom (most visible) stack segment.
+const OUTCOME_STYLE = [
+  { key: "BLOCKED",      color: "#e5484d", label: "Blocked (429 / challenge / timeout)" },
+  { key: "REMOVED",      color: "#f0883e", label: "Removed (dead board / 403)" },
+  { key: "ERROR",        color: "#d29922", label: "Error (transient / server / other)" },
+  { key: "CONFIG",       color: "#4f9cff", label: "Config (bad watchlist data)" },
+  { key: "UNCLASSIFIED", color: "#9aa3b2", label: "Unclassified (pre-dates classifier)" }
+];
+
+const loadingBox = document.getElementById("loadingBox");
+const loginBox = document.getElementById("loginBox");
+const contentBox = document.getElementById("contentBox");
+const loginErr = document.getElementById("loginErr");
+const loginForm = document.getElementById("loginForm");
+const chartStatus = document.getElementById("chartStatus");
+
+function showError(msg) {
+  loginErr.innerHTML = "";
+  if (!msg) return;
+  const div = document.createElement("div");
+  div.className = "err";
+  div.textContent = msg;
+  loginErr.appendChild(div);
+}
+
+function showLoggedOut() {
+  loadingBox.style.display = "none";
+  contentBox.style.display = "none";
+  loginBox.style.display = "";
+}
+
+async function showLoggedIn() {
+  loadingBox.style.display = "none";
+  loginBox.style.display = "none";
+  contentBox.style.display = "";
+  await loadChart();
+}
+
+async function render() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session) await showLoggedIn();
+  else showLoggedOut();
+}
+
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  showError(null);
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) showError(error.message);
+});
+
+supabaseClient.auth.onAuthStateChange((_event, session) => {
+  if (session) showLoggedIn();
+  else showLoggedOut();
+});
+
+let chartRows = null;
+
+function renderLegend() {
+  const legend = document.getElementById("chartLegend");
+  legend.innerHTML = "";
+  OUTCOME_STYLE.forEach(o => {
+    const item = document.createElement("span");
+    item.className = "legend-item";
+    const swatch = document.createElement("span");
+    swatch.className = "legend-swatch";
+    swatch.style.background = o.color;
+    item.appendChild(swatch);
+    item.appendChild(document.createTextNode(o.label));
+    legend.appendChild(item);
+  });
+}
+
+async function loadChart() {
+  chartStatus.textContent = "Loading...";
+  const { data, error } = await supabaseClient
+    .from("pull_failures_daily_counts")
+    .select("snapshot_date, outcome, failure_count")
+    .order("snapshot_date");
+
+  if (error) {
+    chartStatus.textContent = "Failed to load: " + error.message;
+    console.error(error);
+    return;
+  }
+
+  chartRows = data || [];
+  renderLegend();
+  drawChart();
+  chartStatus.textContent = chartRows.length
+    ? ""
+    : "No failures logged -- every day in range was clean.";
+}
+
+// Pivots rows into one entry per day: { date, total, byOutcome: {outcome: count} }
+function pivotByDay(rows) {
+  const byDate = new Map();
+  rows.forEach(r => {
+    if (!byDate.has(r.snapshot_date)) {
+      byDate.set(r.snapshot_date, { date: r.snapshot_date, total: 0, byOutcome: {} });
+    }
+    const day = byDate.get(r.snapshot_date);
+    day.byOutcome[r.outcome] = (day.byOutcome[r.outcome] || 0) + r.failure_count;
+    day.total += r.failure_count;
+  });
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function fitCanvasToContainer(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = canvas.clientWidth;
+  const cssHeight = canvas.clientHeight;
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, width: cssWidth, height: cssHeight };
+}
+
+function drawChart() {
+  if (!chartRows) return;
+  const canvas = document.getElementById("failures-chart");
+  const { ctx, width, height } = fitCanvasToContainer(canvas);
+  const padding = { top: 16, right: 16, bottom: 50, left: 40 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+
+  ctx.clearRect(0, 0, width, height);
+
+  const days = pivotByDay(chartRows);
+  if (days.length === 0) {
+    ctx.font = "14px " + getComputedStyle(document.body).fontFamily;
+    ctx.fillStyle = "#9aa3b2";
+    ctx.fillText("No failure data yet.", padding.left, height / 2);
+    return;
+  }
+
+  const maxTotal = Math.max(...days.map(d => d.total), 1);
+  const yMax = maxTotal * 1.15;
+
+  function yForValue(v) {
+    return padding.top + plotHeight - (v / yMax) * plotHeight;
+  }
+
+  // Axes
+  ctx.strokeStyle = "#2a2f3a";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, padding.top + plotHeight);
+  ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
+  ctx.stroke();
+
+  // Y axis labels (whole numbers, at most 5 ticks)
+  const yTicks = Math.min(5, Math.max(1, Math.round(maxTotal)));
+  ctx.fillStyle = "#9aa3b2";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "right";
+  for (let t = 0; t <= yTicks; t++) {
+    const value = (t / yTicks) * yMax;
+    const y = yForValue(value);
+    ctx.fillText(Math.round(value).toString(), padding.left - 8, y + 4);
+    ctx.strokeStyle = "#1d212b";
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(padding.left + plotWidth, y);
+    ctx.stroke();
+  }
+
+  // Stacked bars, one per day
+  const barSlot = plotWidth / days.length;
+  const barWidth = Math.min(40, barSlot * 0.7);
+  ctx.textAlign = "center";
+  days.forEach((day, i) => {
+    const xCenter = padding.left + barSlot * (i + 0.5);
+    let stackTop = padding.top + plotHeight;
+    OUTCOME_STYLE.forEach(o => {
+      const count = day.byOutcome[o.key] || 0;
+      if (count === 0) return;
+      const segHeight = (count / yMax) * plotHeight;
+      ctx.fillStyle = o.color;
+      ctx.fillRect(xCenter - barWidth / 2, stackTop - segHeight, barWidth, segHeight);
+      stackTop -= segHeight;
+    });
+
+    // X axis label -- every day if it fits, else thin out to avoid overlap.
+    const labelStride = Math.ceil(days.length / 15);
+    if (i % labelStride === 0) {
+      ctx.fillStyle = "#9aa3b2";
+      ctx.font = "10px sans-serif";
+      const label = day.date.slice(5); // MM-DD
+      ctx.save();
+      ctx.translate(xCenter, padding.top + plotHeight + 12);
+      ctx.rotate(-Math.PI / 4);
+      ctx.textAlign = "right";
+      ctx.fillText(label, 0, 0);
+      ctx.restore();
+    }
+  });
+}
+
+let resizeDebounceTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeDebounceTimer);
+  resizeDebounceTimer = setTimeout(drawChart, 150);
+});
+
+render();
+</script>
+</body>
+</html>
