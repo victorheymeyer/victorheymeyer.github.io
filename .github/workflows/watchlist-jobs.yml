@@ -35,6 +35,7 @@ jobs:
           JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
           JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
           JOBS_SUPABASE_DB_URL: ${{ secrets.JOBS_SUPABASE_DB_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           # TEMPORARY -- see workflow_dispatch.inputs above. Empty string on
           # a scheduled (non-manual) run, which the Python side treats as unset.
           WORKDAY_ROLLUP_DIAGNOSTIC: ${{ github.event.inputs.workday_rollup_diagnostic }}

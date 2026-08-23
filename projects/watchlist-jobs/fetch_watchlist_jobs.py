@@ -912,6 +912,115 @@ def load_change_tracking_state():
     return state
 
 
+ALERT_TO = "red.alert@heymeyer.com"
+ALERT_FROM = "Watchlist Monitor <alerts@mail.heymeyer.com>"
+
+
+def _query_removed_candidates():
+    """Companies REMOVED for 5+ consecutive days (safe-to-deactivate list)."""
+    try:
+        cutoff = (datetime.now(SEATTLE_TZ).date() - timedelta(days=4)).isoformat()
+        resp = sb.table("pull_failures") \
+            .select("watchlist_company, ats, snapshot_date") \
+            .eq("outcome", "REMOVED") \
+            .gte("snapshot_date", cutoff) \
+            .execute()
+        by_co = {}
+        for r in (resp.data or []):
+            by_co.setdefault((r["watchlist_company"], r["ats"]), set()).add(r["snapshot_date"])
+        return sorted([f"{co} ({ats})" for (co, ats), days in by_co.items() if len(days) >= 5])
+    except Exception as e:
+        print(f"WARNING: removed-candidate query failed: {type(e).__name__}: {e}")
+        return []
+
+
+def _query_repeat_offenders():
+    """Non-BLOCKED failures recurring on 3+ distinct days in the last 7."""
+    try:
+        cutoff = (datetime.now(SEATTLE_TZ).date() - timedelta(days=6)).isoformat()
+        resp = sb.table("pull_failures") \
+            .select("watchlist_company, ats, outcome, snapshot_date") \
+            .neq("outcome", "BLOCKED") \
+            .gte("snapshot_date", cutoff) \
+            .execute()
+        by_co = {}
+        for r in (resp.data or []):
+            key = (r["watchlist_company"], r["ats"], r["outcome"])
+            by_co.setdefault(key, set()).add(r["snapshot_date"])
+        return sorted([f"{co} ({ats}, {out}, {len(days)}d)"
+                       for (co, ats, out), days in by_co.items() if len(days) >= 3])
+    except Exception as e:
+        print(f"WARNING: repeat-offender query failed: {type(e).__name__}: {e}")
+        return []
+
+
+def send_alert_email(failure_rows, snapshot_date):
+    """Send ONE alert email if anything needs attention; else nothing."""
+    blocked = [r for r in failure_rows if r.get("outcome") == "BLOCKED"]
+    removed_candidates = _query_removed_candidates()
+    repeat_offenders = _query_repeat_offenders()
+
+    if not blocked and not removed_candidates and not repeat_offenders:
+        print("Alert email: nothing to report (healthy day), not sending.")
+        return
+
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        print("WARNING: RESEND_API_KEY not set; skipping alert email.")
+        return
+
+    lines = [f"Watchlist pull alert — {snapshot_date}", ""]
+    if blocked:
+        lines.append(f"[!] BLOCKED today ({len(blocked)}) — investigate:")
+        for r in blocked:
+            lines.append(f"    - {r['watchlist_company']} ({r['ats']}): "
+                         f"{r.get('error_code')} :: {r.get('error_message', '')[:120]}")
+        lines.append("")
+    if removed_candidates:
+        lines.append(f"[x] Dead 5+ days — safe to deactivate ({len(removed_candidates)}):")
+        for c in removed_candidates:
+            lines.append(f"    - {c}")
+        lines.append("")
+    if repeat_offenders:
+        lines.append(f"[~] Repeat offenders, 3+ days ({len(repeat_offenders)}):")
+        for c in repeat_offenders:
+            lines.append(f"    - {c}")
+        lines.append("")
+    body = "\n".join(lines)
+
+    subject_bits = []
+    if blocked:
+        subject_bits.append(f"{len(blocked)} BLOCKED")
+    if removed_candidates:
+        subject_bits.append(f"{len(removed_candidates)} dead")
+    if repeat_offenders:
+        subject_bits.append(f"{len(repeat_offenders)} repeat")
+    subject = "Watchlist alert: " + ", ".join(subject_bits)
+
+    payload = json.dumps({
+        "from": ALERT_FROM,
+        "to": [ALERT_TO],
+        "subject": subject,
+        "text": body,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            print(f"Alert email sent to {ALERT_TO} (HTTP {resp.status}): {subject}")
+    except Exception as e:
+        # Never let an alert failure break the run.
+        print(f"WARNING: alert email failed to send: {type(e).__name__}: {e}")
+
+
 def main():
     watchlist = load_watchlist()
     print(f"Loaded {len(watchlist)} active companies from watchlist_companies")
@@ -1193,6 +1302,14 @@ def main():
         sb.table("pull_failures").delete().lt("snapshot_date", failure_cutoff).execute()
     except Exception as e:
         print(f"WARNING: failed to prune old pull_failures rows: {type(e).__name__}: {e}")
+
+    # Monitoring alert: one email to red.alert@heymeyer.com only if something
+    # needs attention (BLOCKED today, dead-5-days, or repeat offenders).
+    # Best-effort: wrapped so a send failure never breaks the run.
+    try:
+        send_alert_email(failure_rows, snapshot_date)
+    except Exception as e:
+        print(f"WARNING: send_alert_email raised: {type(e).__name__}: {e}")
 
     if failures:
         if len(failures) > MAX_TOLERATED_FAILURES:
