@@ -960,6 +960,9 @@ def send_alert_email(failure_rows, snapshot_date):
     removed_candidates = _query_removed_candidates()
     repeat_offenders = _query_repeat_offenders()
 
+    # TEMP TEST SCAFFOLDING: fire on any classified failure today. REMOVE after test.
+    todays_failures = [r for r in failure_rows if r.get("error_code")]
+
     if not blocked and not removed_candidates and not repeat_offenders:
         print("Alert email: nothing to report (healthy day), not sending.")
         return
@@ -986,6 +989,14 @@ def send_alert_email(failure_rows, snapshot_date):
         for c in repeat_offenders:
             lines.append(f"    - {c}")
         lines.append("")
+    # TEMP TEST SCAFFOLDING: remove with the todays_failures block above.
+    if todays_failures:
+        lines.append(f"[i] All failures today ({len(todays_failures)}):")
+        for r in todays_failures:
+            lines.append(f"    - {r['watchlist_company']} ({r['ats']}): "
+                         f"{r.get('error_code')}/{r.get('outcome')} :: "
+                         f"{r.get('error_message', '')[:100]}")
+        lines.append("")
     body = "\n".join(lines)
 
     subject_bits = []
@@ -995,6 +1006,8 @@ def send_alert_email(failure_rows, snapshot_date):
         subject_bits.append(f"{len(removed_candidates)} dead")
     if repeat_offenders:
         subject_bits.append(f"{len(repeat_offenders)} repeat")
+    if todays_failures and not subject_bits:
+        subject_bits.append(f"{len(todays_failures)} failures")
     subject = "Watchlist alert: " + ", ".join(subject_bits)
 
     payload = json.dumps({
