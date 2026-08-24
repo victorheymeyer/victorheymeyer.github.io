@@ -78,6 +78,27 @@ const KPIS = [
     unit: "MB",
     decimals: 0,
   },
+  {
+    label: "# of Failures",
+    hint: "Daily pull failures classified Config (bad watchlist data) or Blocked (429 / challenge / timeout). Other outcomes seen in pull_failures_daily_counts: Error (transient / server / other), Removed (dead board / 403), Unclassified (pre-dates classifier).",
+    column: "failure_count",
+    targetValue: 0,
+    href: "../private/pull-failures.html",
+    loadRows: async () => {
+      const { data, error } = await supabaseClient
+        .from("pull_failures_daily_counts")
+        .select("snapshot_date,outcome,failure_count")
+        .in("outcome", ["CONFIG", "BLOCKED"])
+        .gte("snapshot_date", FIRST_OF_MONTH);
+      if (error) throw error;
+      const byDate = new Map();
+      (data || []).forEach(r => {
+        byDate.set(r.snapshot_date, (byDate.get(r.snapshot_date) || 0) + r.failure_count);
+      });
+      return Array.from(byDate, ([snapshot_date, failure_count]) => ({ snapshot_date, failure_count }))
+        .sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    },
+  },
 ];
 const kpiCharts = [];
 let kpiAsOfDate = null;
@@ -295,12 +316,13 @@ async function renderTable(table) {
   }
 }
 
-async function loadKpiHistory(column) {
+async function loadKpiHistory(kpi) {
+  if (kpi.loadRows) return kpi.loadRows();
   const { data, error } = await supabaseClient
     .from("job_stats")
-    .select("snapshot_date," + column)
+    .select("snapshot_date," + kpi.column)
     .order("snapshot_date", { ascending: true })
-    .not(column, "is", null)
+    .not(kpi.column, "is", null)
     .gte("snapshot_date", FIRST_OF_MONTH)
     .limit(31);
   if (error) throw error;
@@ -454,9 +476,12 @@ async function renderKpi(kpi) {
   const pctEl = row.querySelector(".kpi-pct-value");
   const canvas = row.querySelector("canvas");
   try {
-    const rows = await loadKpiHistory(kpi.column);
+    const rows = await loadKpiHistory(kpi);
     const latest = rows.length ? Number(rows[rows.length - 1][kpi.column]) : null;
-    valueEl.textContent = fmtKpiValue(kpi, latest);
+    const valueText = fmtKpiValue(kpi, latest);
+    valueEl.innerHTML = kpi.href
+      ? '<a href="' + esc(kpi.href) + '">' + esc(valueText) + '</a>'
+      : esc(valueText);
     if (rows.length) {
       const latestDate = rows[rows.length - 1].snapshot_date;
       if (!kpiAsOfDate || latestDate > kpiAsOfDate) {

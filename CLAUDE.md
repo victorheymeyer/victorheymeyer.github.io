@@ -7,6 +7,17 @@
 - API keys and secrets live in GitHub Actions secrets only, never client-side.
   The Supabase anon key is the only key allowed in browser code.
 
+## Local dev server
+
+A static file server for this repo runs on `http://localhost:3000` (config in
+`.claude/launch.json`, `npx serve -l 3000 .`, root = repo root). Start it via
+Bash at the start of a session if it isn't already running — don't rely on it
+having been left running or auto-starting. For any front-end change, give the
+user the `http://localhost:3000/...` link to the changed page(s) so they can
+verify in their own browser, matching the page's path under the repo root
+(e.g. a change to `projects/watchlist-jobs/stats/index.html` gets
+`http://localhost:3000/projects/watchlist-jobs/stats/index.html`).
+
 ## Git workflow
 
 When the user says "commit", commit AND push in the same step — no separate
