@@ -190,16 +190,18 @@ async function fetchAllRows(table, selectCols, applyFilters) {
 
 const MONTH_NAMES = ["January","February","March","April","May","June",
   "July","August","September","October","November","December"];
+const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 // Parses a "YYYY-MM-DD" date string directly (no Date object) so the
 // displayed day can't shift due to local-timezone conversion.
 function fmtDateLong(d) {
   if (!d) return "";
   const [y, m, day] = String(d).slice(0, 10).split("-").map(Number);
   if (!y || !m || !day) return d;
-  return MONTH_NAMES[m - 1] + " " + day + ", " + y;
+  const dow = DAY_NAMES[new Date(Date.UTC(y, m - 1, day)).getUTCDay()];
+  return dow + ", " + MONTH_NAMES[m - 1] + " " + day + ", " + y;
 }
 
-// "today" / "1 day ago" / "N days ago", comparing the snapshot date against
+// "today" / "yesterday" / "N days ago", comparing the given date against
 // the viewer's local calendar date (not the server's or UTC's).
 function daysAgoLabel(d) {
   if (!d) return "";
@@ -210,7 +212,50 @@ function daysAgoLabel(d) {
   const todayUTC = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   const diff = Math.round((todayUTC - snapshotUTC) / 86400000);
   if (diff <= 0) return "today";
-  return diff + (diff === 1 ? " day ago" : " days ago");
+  if (diff === 1) return "yesterday";
+  return diff + " days ago";
+}
+
+// posted_at is a timestamptz -- bucket it into the Seattle calendar day so it's
+// comparable to first_seen (already a Seattle day) and to daysAgoLabel/fmtDateLong.
+function seattleDay(ts) {
+  const dt = new Date(ts);
+  if (isNaN(dt)) return null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(dt);
+}
+
+function subtractOneDay(d) {
+  const [y, m, day] = String(d).slice(0, 10).split("-").map(Number);
+  if (!y || !m || !day) return d;
+  return new Date(Date.UTC(y, m - 1, day - 1)).toISOString().slice(0, 10);
+}
+
+// Per row: posted_at if we have it, else first_seen - 1 day (first_seen is the
+// day we noticed the job, so the actual post date is estimated as the day before).
+function effectivePostedDate(r) {
+  if (r.posted_at) return seattleDay(r.posted_at);
+  if (r.first_seen) return subtractOneDay(r.first_seen);
+  return null;
+}
+
+// Effective posted date of the most recently *tracked* row (max first_seen), for
+// the page-level "Posted <when>" banner. Deliberately not a max of effective
+// posted date across every open role: a stale role's posted_at can get bumped
+// by the source ATS without the job being new to us, which would otherwise make
+// old backlog noise look like today's freshest posting.
+function mostRecentPostedDate(rows) {
+  let bestFirstSeen = null, bestEffective = null;
+  for (const r of rows) {
+    if (!r.first_seen) continue;
+    if (!bestFirstSeen || r.first_seen > bestFirstSeen) {
+      bestFirstSeen = r.first_seen;
+      bestEffective = effectivePostedDate(r);
+    } else if (r.first_seen === bestFirstSeen) {
+      const eff = effectivePostedDate(r);
+      if (eff && (!bestEffective || eff > bestEffective)) bestEffective = eff;
+    }
+  }
+  return bestEffective;
 }
 
 function classifierMatch(selected, value) {
@@ -367,8 +412,9 @@ function initJobsPanel(panelEl) {
     if (hideSub) {
       $(".sub").style.display = "none";
     } else {
+      const postedDate = mostRecentPostedDate(state.rows);
       $(".sub").textContent =
-        "As of " + daysAgoLabel(state.snapshotDate) + " (" + fmtDateLong(state.snapshotDate) + ")" +
+        "Posted " + daysAgoLabel(postedDate) + " (" + fmtDateLong(postedDate) + ")" +
         (state.fullyLoaded ? "" : " (loading full list for filtering/paging…)");
     }
 
