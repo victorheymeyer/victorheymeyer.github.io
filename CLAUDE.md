@@ -7,6 +7,14 @@
 - API keys and secrets live in GitHub Actions secrets only, never client-side.
   The Supabase anon key is the only key allowed in browser code.
 
+## Git workflow
+
+When the user says "commit", commit AND push in the same step — no separate
+confirmation needed for the push — as long as there are no issues with the
+commit (e.g. unexpected files staged, secrets in the diff, failing
+pre-commit hooks). If something looks off, stop and flag it instead of
+pushing.
+
 ## Timezone invariant (jobs-tracker only)
 
 Two storage types, two rules. Never collapse them.

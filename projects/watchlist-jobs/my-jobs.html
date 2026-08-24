@@ -359,6 +359,11 @@ function initJobsPanel(panelEl) {
     fullyLoaded: false
   };
 
+  // Set by render() once data has loaded, then read by renderTable() (which
+  // also runs on its own, e.g. on filter changes) so the "Posted <date> |"
+  // prefix stays put on the count line without render() needing to rerun.
+  let subPrefix = "";
+
   // Panels opt into the page's resolved criteria via data-preset on the
   // .jobsPanel element, applied once before the first render. "target" and
   // "target-today" both seed the full saved-criteria shape; "target-today"
@@ -409,13 +414,12 @@ function initJobsPanel(panelEl) {
 
   // ---- Render ----
   function render() {
-    if (hideSub) {
-      $(".sub").style.display = "none";
-    } else {
+    $(".sub").style.display = "none";
+    if (!hideSub) {
       const postedDate = mostRecentPostedDate(state.rows);
-      $(".sub").textContent =
-        "Posted " + daysAgoLabel(postedDate) + " (" + fmtDateLong(postedDate) + ")" +
-        (state.fullyLoaded ? "" : " (loading full list for filtering/paging…)");
+      subPrefix =
+        "Posted " + daysAgoLabel(postedDate) + " (" + fmtDateLong(postedDate) + ") | " +
+        (state.fullyLoaded ? "" : "(loading full list for filtering/paging…) ");
     }
 
     // company dropdown
@@ -594,7 +598,7 @@ function initJobsPanel(panelEl) {
     const start = showAll ? 0 : (state.page - 1) * state.pageSize;
     const slice = showAll ? filtered : filtered.slice(start, start + state.pageSize);
 
-    $(".count").textContent =
+    $(".count").textContent = subPrefix +
       total.toLocaleString() + " role" + (total === 1 ? "" : "s") + " matched" +
       (showAll ? "" : (total ? (" (showing " + (start + 1) + " to " + Math.min(start + state.pageSize, total) + ")") : ""));
 
