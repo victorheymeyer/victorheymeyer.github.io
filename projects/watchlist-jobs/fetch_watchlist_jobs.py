@@ -1204,6 +1204,18 @@ def main():
             sb.table(table).upsert(rows[i:i + size], on_conflict=conflict).execute()
             print(f"  {table}: upserted {min(i + size, len(rows))}/{len(rows)}")
 
+    def rpc_batched(fn_name, batch_size=2000):
+        # Each call updates at most batch_size rows so a single statement never
+        # runs long enough to hit the authenticator role's 8s statement_timeout.
+        total = 0
+        while True:
+            resp = sb.rpc(fn_name, {"batch_size": batch_size}).execute()
+            n = resp.data or 0
+            total += n
+            if n < batch_size:
+                break
+        return total
+
     print("Writing fact table...")
     upsert_chunked("raw_watchlist_jobs", fact_rows, "snapshot_date,watchlist_company,ats_id")
     print("Writing job dimension...")
@@ -1226,12 +1238,12 @@ def main():
     print("  refresh_location_flags done")
 
     print("Clearing descriptions for non-Seattle jobs...")
-    sb.rpc("null_non_seattle_description").execute()
-    print("  done")
+    n = rpc_batched("null_non_seattle_description")
+    print(f"  cleared {n} descriptions")
 
     print("Clearing raw backup data for non-Seattle jobs...")
-    sb.rpc("null_non_seattle_raw").execute()
-    print("  done")
+    n = rpc_batched("null_non_seattle_raw")
+    print(f"  cleared {n} raw blobs")
 
     print("Pruning old raw snapshots...")
     RETENTION_DAYS = 7
