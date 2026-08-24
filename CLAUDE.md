@@ -31,6 +31,32 @@ never be Seattle-local and will drift ~1hr at DST. This is permanent. Gate on
 the Seattle day inside the job if a specific day boundary matters; never treat
 the cron trigger time as authoritative.
 
+## Daily VACUUM FULL maintenance window (jobs-tracker, do not run manual bulk writes then)
+
+pg_cron runs `VACUUM FULL` on `job_content` and `raw_watchlist_jobs` every day,
+back-to-back, at **13:44-13:52 UTC** (~6:44-6:52am Seattle): jobs 4/7 (job_content
+at 13:45/13:47) and jobs 5/8 (raw_watchlist_jobs at 13:49/13:51). `VACUUM FULL`
+takes an `AccessExclusiveLock` for its duration, blocking every read against
+that table — unlike plain `VACUUM`, which doesn't block readers.
+
+Never run a manual bulk UPDATE/DELETE against `job_content` or
+`raw_watchlist_jobs` inside that window (e.g. via `mcp__supabase__execute_sql`
+or the dashboard SQL editor). Two things stack when you do: your statement
+queues behind (or holds off) the cron's exclusive lock, and every page read
+that hits the table (index.html/my-jobs.html/global.html/dev-env, all via the
+`jobs_location_flags` view) queues behind that combined lock and hits the
+2-minute `statement_timeout`, surfacing as "Could not load data. canceling
+statement due to statement timeout" site-wide. This already happened once,
+2026-08-24 ~13:45-13:51 UTC, when a manual `null_non_seattle_description`/
+`null_non_seattle_raw` batch run collided with the job_content vacuum.
+
+Run ad-hoc bulk writes on these two tables outside 13:44-13:52 UTC. The
+schedule itself is intentional (fights TOAST bloat from the description/raw
+nulling pattern — see migration `20260714181838_restore_vacuum_full_cron.sql`)
+and should not be removed; if the collision risk needs fixing, that's a
+change to make deliberately (e.g. widen the reserved window, or move to a
+non-exclusive-lock reclaim method), not a side effect of a maintenance script.
+
 ## ats-scrapers fork (contribution scratch, not production)
 
 The `ats-scrapers` clone at `C:\Users\vheym\ats-scrapers` is throwaway scratch for an upstream PR (Workday startDate/endDate), NOT a source for this pipeline. The production scraper is the vendored wheel at `projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl`; never vendor or install from that clone.
