@@ -39,6 +39,7 @@ jobs:
         env:
           JOBS_SUPABASE_URL: ${{ secrets.JOBS_SUPABASE_URL }}
           JOBS_SUPABASE_SERVICE_KEY: ${{ secrets.JOBS_SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           # Empty string on a scheduled (non-manual) run, which
           # probe_ats.py's main() treats as unset -- uncapped, real 100/20
           # caps from next_probe_batch(). Set only on a manual dispatch

@@ -15,10 +15,12 @@ Two things are FAITHFUL to production:
 Usage: python probe_ats.py   (requires JOBS_SUPABASE_URL / JOBS_SUPABASE_SERVICE_KEY)
 """
 
+import json
 import os
 import re
 import sys
 import time
+import urllib.request
 from collections import Counter, defaultdict
 
 # Location strings routinely carry non-ASCII characters (accented city
@@ -498,6 +500,69 @@ PAGINATED_SLEEP_SECONDS = 2.0
 # apply untouched.
 _CAP_OVERRIDE_ENV = "PROBE_CAP_OVERRIDE"
 
+# Same Resend setup as fetch_watchlist_jobs.py's send_alert_email().
+ALERT_TO = "red.alert@heymeyer.com"
+ALERT_FROM = "Probe Pipeline <alerts@mail.heymeyer.com>"
+
+
+def _auto_approve_and_alert():
+    """Call auto_approve_probe_decisions() (Yes-Go / Yes-SmallCoLowSW tiers
+    only - see the 20260824190000 migration) and, if it approved anything,
+    email a summary. Never raises - a failure here shouldn't fail the run
+    that already wrote this batch's probe results."""
+    try:
+        resp = _get_client().rpc("auto_approve_probe_decisions", {}).execute()
+        approved = resp.data or []
+    except Exception as e:
+        print(f"WARNING: auto_approve_probe_decisions RPC failed: {type(e).__name__}: {e}")
+        return
+
+    if not approved:
+        print("Auto-approve: nothing new to approve.")
+        return
+
+    by_tier = defaultdict(list)
+    for row in approved:
+        by_tier[row["out_seattle_rec"]].append(f"{row['out_company']} ({row['out_ats']}/{row['out_slug']})")
+    print(f"Auto-approved {len(approved)} companies: " +
+          ", ".join(f"{tier}={len(rows)}" for tier, rows in sorted(by_tier.items())))
+
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        print("WARNING: RESEND_API_KEY not set; skipping auto-approve alert email.")
+        return
+
+    lines = [f"Auto-approved {len(approved)} companies from today's probe run:", ""]
+    for tier, rows in sorted(by_tier.items()):
+        lines.append(f"[{tier}] ({len(rows)}):")
+        for r in sorted(rows):
+            lines.append(f"    - {r}")
+        lines.append("")
+    body = "\n".join(lines)
+
+    payload = json.dumps({
+        "from": ALERT_FROM,
+        "to": [ALERT_TO],
+        "subject": f"Probe auto-approve: {len(approved)} companies added",
+        "text": body,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "probe-alerts/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            print(f"Auto-approve alert email sent to {ALERT_TO} (HTTP {resp.status})")
+    except Exception as e:
+        print(f"WARNING: auto-approve alert email failed to send: {type(e).__name__}: {e}")
+
 
 def _fetch_batch(cap_override=None):
     resp = _get_client().rpc("next_probe_batch", {}).execute()
@@ -555,6 +620,11 @@ def main():
 
     elapsed = time.time() - t_start
     _print_run_summary(batch, outcome_counts, elapsed, error_rows, write_failures)
+
+    try:
+        _auto_approve_and_alert()
+    except Exception as e:
+        print(f"WARNING: _auto_approve_and_alert raised: {type(e).__name__}: {e}")
 
 
 def _print_run_summary(batch, outcome_counts, elapsed, error_rows, write_failures):
