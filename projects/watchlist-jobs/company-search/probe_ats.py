@@ -564,6 +564,69 @@ def _auto_approve_and_alert():
         print(f"WARNING: auto-approve alert email failed to send: {type(e).__name__}: {e}")
 
 
+def _promote_and_alert():
+    """Call promote_probe_decisions() (see the 20260825000000 migration) and
+    email a summary if it did anything. Covers every probe_decisions row
+    with add_to_watchlist=true and promoted_at still null - not just
+    today's auto-approvals, so a manually-approved Yes-Hold row gets
+    promoted the same way. Never raises, same reasoning as
+    _auto_approve_and_alert()."""
+    try:
+        resp = _get_client().rpc("promote_probe_decisions", {}).execute()
+        results = resp.data or []
+    except Exception as e:
+        print(f"WARNING: promote_probe_decisions RPC failed: {type(e).__name__}: {e}")
+        return
+
+    if not results:
+        print("Promote: nothing pending.")
+        return
+
+    promoted = [r for r in results if r["out_promoted"]]
+    skipped = [r for r in results if not r["out_promoted"]]
+    print(f"Promoted {len(promoted)} to watchlist_companies" +
+          (f", skipped {len(skipped)} (name collision)" if skipped else ""))
+
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        print("WARNING: RESEND_API_KEY not set; skipping promote alert email.")
+        return
+
+    lines = [f"Promoted {len(promoted)} companies to watchlist_companies:", ""]
+    for r in sorted(promoted, key=lambda r: r["out_company"]):
+        lines.append(f"    - {r['out_company']} ({r['out_ats']}/{r['out_slug']}, {r['out_seattle_rec']})")
+    if skipped:
+        lines.append("")
+        lines.append(f"Skipped {len(skipped)} (already exists under a different slug - check manually):")
+        for r in sorted(skipped, key=lambda r: r["out_company"]):
+            lines.append(f"    - {r['out_company']} ({r['out_ats']}/{r['out_slug']}): {r['out_reason']}")
+    body = "\n".join(lines)
+
+    payload = json.dumps({
+        "from": ALERT_FROM,
+        "to": [ALERT_TO],
+        "subject": f"Probe promote: {len(promoted)} added to watchlist" +
+                   (f", {len(skipped)} skipped" if skipped else ""),
+        "text": body,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "probe-alerts/1.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            print(f"Promote alert email sent to {ALERT_TO} (HTTP {resp.status})")
+    except Exception as e:
+        print(f"WARNING: promote alert email failed to send: {type(e).__name__}: {e}")
+
+
 def _fetch_batch(cap_override=None):
     resp = _get_client().rpc("next_probe_batch", {}).execute()
     batch = resp.data or []
@@ -625,6 +688,11 @@ def main():
         _auto_approve_and_alert()
     except Exception as e:
         print(f"WARNING: _auto_approve_and_alert raised: {type(e).__name__}: {e}")
+
+    try:
+        _promote_and_alert()
+    except Exception as e:
+        print(f"WARNING: _promote_and_alert raised: {type(e).__name__}: {e}")
 
 
 def _print_run_summary(batch, outcome_counts, elapsed, error_rows, write_failures):
