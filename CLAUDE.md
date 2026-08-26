@@ -18,7 +18,17 @@ verify in their own browser, matching the page's path under the repo root
 (e.g. a change to `projects/watchlist-jobs/stats/index.html` gets
 `http://localhost:3000/projects/watchlist-jobs/stats/index.html`).
 
+Never use the internal Browser pane / preview tools (`mcp__Claude_Browser__*`)
+for this repo, even briefly to self-verify a UI change before reporting done.
+Start the server, hand the user the localhost link, and let them check it in
+their own system browser. Only use the internal Browser pane if the user
+explicitly asks for it.
+
 ## Git workflow
+
+Once a change is ready, proactively surface that it's ready ("want me to
+commit this?") — don't wait to be asked, and don't assume silence means
+go-ahead for the first commit.
 
 When the user says "commit", commit AND push in the same step — no separate
 confirmation needed for the push — as long as there are no issues with the
@@ -95,6 +105,42 @@ assumed, before arming the new one.
 ## ats-scrapers fork (contribution scratch, not production)
 
 The `ats-scrapers` clone at `C:\Users\vheym\ats-scrapers` is throwaway scratch for an upstream PR (Workday startDate/endDate), NOT a source for this pipeline. The production scraper is the vendored wheel at `projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl`; never vendor or install from that clone.
+
+## Probe pipeline invariants (jobs-tracker)
+
+The company-discovery probe pipeline (`ats_probe_results`, `probe_decisions`,
+`ats_probe_latest` view, `next_probe_batch()`, `probe_ats.py`, daily
+`probe-ats.yml` cron) has several non-obvious decisions that are easy to
+accidentally regress:
+
+- **Legacy discriminator is `probed_at < '2026-07-22'`, not `status IS NULL`.**
+  Pre-2026-07-22 rows already have a populated `status` in an old vocabulary
+  that collides with the current `'ok'|'empty'|'gone'|'error'` set.
+- **CA/Canada handling is intentionally asymmetric.** Onsite `bay_jobs`
+  accepts bare "CA" only in strict postal context. Remote `remote_ca_jobs`
+  never accepts bare "CA" (too likely to mean Canada) — requires full
+  "California" or a known city. Don't loosen remote to match onsite.
+- **DC exclusion only applies to WA's onsite/remote branches** (word
+  collision with "Washington, D.C."). Don't add it to NY/CA branches.
+- **`probe_ats.py` writes one result immediately per company, never
+  batches.** This is the crash-resumption contract — a killed run leaves
+  correct rows for everything already done.
+- **Eightfold `status='error'` rows under Cloudflare block are expected,
+  not a bug** (e.g. Citi, Deloitte) — the `httpcloak` bypass is an optional
+  wheel extra, not installed in this project.
+- **Workday rows in `watchlist_companies` use a different shape than every
+  other ATS**: `company` (the PK) is the directory's `tenant/site` slug with
+  `/` → `__` (e.g. `remitly__remitly_careers`), not the human display name;
+  `slug` is the full careers URL, not a short slug. Every other ATS uses the
+  human name for `company` and the short slug verbatim. Get this backwards
+  and promotion collides or writes garbage company names.
+- **`watchlist_companies.display_name` has no default and nothing
+  coalesces it.** Any manual or scripted insert must set it explicitly, or
+  the UI falls back to the raw `company` value (ugly for Workday).
+- **Auto-approve (`auto_approve_probe_decisions()`) and auto-promote
+  (`promote_probe_decisions()`) are wired into `probe_ats.py`'s `main()`
+  but commented out / ON HOLD as of 2026-08-25 at Victor's request.** Don't
+  re-enable without being explicitly asked, even if it looks safe to resume.
 
 ## Supabase migration history drift (jobs-tracker, resolved 2026-08-22)
 
