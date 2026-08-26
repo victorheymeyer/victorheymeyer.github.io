@@ -24,9 +24,17 @@
     { label: "About", href: "/projects/watchlist-jobs/about.html" }
   ];
 
-  // Treat "/x", "/x/", and "/x/index.html" as the same path for active-link matching.
+  // Treat "/x", "/x/", "/x/index.html", and "/x.html" as the same path for
+  // active-link matching. Stripping ".html" (not just "index.html") matters
+  // because the local dev server (`serve`) 301s every "/foo.html" request to
+  // the extensionless "/foo" - without this, location.pathname ends up
+  // extensionless after that redirect while most nav hrefs still carry
+  // ".html", so only hrefs that were already extensionless (Dev) or literally
+  // named "index.html" (Stats) ever matched and lit up; every other link
+  // silently never got its active state locally. Production (GitHub
+  // Pages/Cloudflare) doesn't redirect, so this bug never showed up there.
   function normalize(path) {
-    return path.replace(/index\.html$/, "").replace(/\/+$/, "") || "/";
+    return path.replace(/\.html$/, "").replace(/\/index$/, "").replace(/\/+$/, "") || "/";
   }
   const here = normalize(location.pathname);
 
