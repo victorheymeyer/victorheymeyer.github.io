@@ -102,9 +102,33 @@ up the scraper workflow in a new repo, leave its cron disabled until the old
 repo's cron is confirmed off. Verify the old cron is actually disabled, not just
 assumed, before arming the new one.
 
-## ats-scrapers fork (contribution scratch, not production)
+## ats-scrapers naming history and which install to use (jobs-tracker)
 
-The `ats-scrapers` clone at `C:\Users\vheym\ats-scrapers` is throwaway scratch for an upstream PR (Workday startDate/endDate), NOT a source for this pipeline. The production scraper is the vendored wheel at `projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl`; never vendor or install from that clone.
+The scraper package was renamed once: it used to be called `jobhive-py`
+(0.1.0) and its response shape changed across that rename — see the comment
+at fetch_watchlist_jobs.py:89. The current name is `ats-scrapers` (import
+name `ats_scrapers`), upstream at https://github.com/kalil0321/ats-scrapers,
+currently 0.2.0. `jobhive-py` is dead history, not an alternate name to
+install or import — if a command, doc, or old reference mentions it, treat
+it as referring to today's `ats-scrapers`.
+
+Two different copies of `ats_scrapers` can exist on this machine and it
+matters which one is active:
+
+- **Production source**: the vendored wheel at
+  `projects/watchlist-jobs/vendor/ats_scrapers-0.2.0-py3-none-any.whl`. This
+  is what the pipeline (fetch_watchlist_jobs.py, probe_ats.py) must run
+  against.
+- **Contribution scratch**: an editable clone at `C:\Users\vheym\ats-scrapers`
+  used only for drafting an upstream PR (Workday startDate/endDate). Not a
+  source for this pipeline, even if `pip show ats-scrapers` reports the same
+  version number — an editable install can diverge from the wheel without
+  the version bumping. Never vendor or install from that clone.
+
+If `pip show ats-scrapers` points at an `Editable project location` under
+`C:\Users\vheym\ats-scrapers` in an environment meant to run this pipeline,
+that's the scratch fork shadowing the vendored wheel — reinstall from the
+wheel before trusting pipeline output.
 
 ## Probe pipeline invariants (jobs-tracker)
 
