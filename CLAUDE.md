@@ -26,6 +26,13 @@ commit (e.g. unexpected files staged, secrets in the diff, failing
 pre-commit hooks). If something looks off, stop and flag it instead of
 pushing.
 
+## Verify with data, not green checkmarks
+
+A workflow run showing green, a migration reporting success, or an editor
+"saved" message is not evidence the intended change landed. Confirm with the
+actual effect: row counts, a SELECT, the rendered page. "The job ran" and "the
+rows are in the table" are different claims. Check the second one.
+
 ## Timezone invariant (jobs-tracker only)
 
 Two storage types, two rules. Never collapse them.
@@ -75,6 +82,15 @@ nulling pattern — see migration `20260714181838_restore_vacuum_full_cron.sql`)
 and should not be removed; if the collision risk needs fixing, that's a
 change to make deliberately (e.g. widen the reserved window, or move to a
 non-exclusive-lock reclaim method), not a side effect of a maintenance script.
+
+## One scraper cron per database (jobs-tracker)
+
+Only one repo may run the scraper cron against the jobs-tracker Supabase
+instance at a time. Two crons writing the same tables on the same schedule
+double-write every snapshot. This matters most during a repo move: when setting
+up the scraper workflow in a new repo, leave its cron disabled until the old
+repo's cron is confirmed off. Verify the old cron is actually disabled, not just
+assumed, before arming the new one.
 
 ## ats-scrapers fork (contribution scratch, not production)
 
