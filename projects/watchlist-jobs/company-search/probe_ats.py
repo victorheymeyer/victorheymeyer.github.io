@@ -684,15 +684,20 @@ def main():
     elapsed = time.time() - t_start
     _print_run_summary(batch, outcome_counts, elapsed, error_rows, write_failures)
 
-    try:
-        _auto_approve_and_alert()
-    except Exception as e:
-        print(f"WARNING: _auto_approve_and_alert raised: {type(e).__name__}: {e}")
-
-    try:
-        _promote_and_alert()
-    except Exception as e:
-        print(f"WARNING: _promote_and_alert raised: {type(e).__name__}: {e}")
+    # ON HOLD as of 2026-08-25 at Victor's request - do not re-enable without
+    # him asking to resume. _auto_approve_and_alert() and _promote_and_alert()
+    # (and the auto_approve_probe_decisions()/promote_probe_decisions() RPCs
+    # they call) are otherwise fully built and tested - just uncomment these
+    # two calls to resume.
+    # try:
+    #     _auto_approve_and_alert()
+    # except Exception as e:
+    #     print(f"WARNING: _auto_approve_and_alert raised: {type(e).__name__}: {e}")
+    #
+    # try:
+    #     _promote_and_alert()
+    # except Exception as e:
+    #     print(f"WARNING: _promote_and_alert raised: {type(e).__name__}: {e}")
 
 
 def _print_run_summary(batch, outcome_counts, elapsed, error_rows, write_failures):
