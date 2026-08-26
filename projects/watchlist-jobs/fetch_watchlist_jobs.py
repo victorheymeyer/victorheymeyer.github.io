@@ -817,7 +817,8 @@ DIM_COLS = ["watchlist_company", "ats_id", "title", "location", "department", "d
             "level", "raw", "description_change_count",
             "description_last_change_chars", "description_plain_len", "requisition_id",
             "ats_type", "is_remote", "team", "employment_type",
-            "salary_min", "salary_max", "salary_currency", "salary_period", "posted_at"]
+            "salary_min", "salary_max", "salary_currency", "salary_period", "posted_at",
+            "country_iso", "region", "experience", "salary_summary", "commitment", "language"]
 
 # description_last_change is not tracked here: it duplicated the existing
 # current_version_first_seen column (verified byte-identical), which
