@@ -1,0 +1,500 @@
+<title>Watchlist Review</title>
+<style>
+:root {
+  --paper: #f7f5f0;
+  --paper-raised: #ffffff;
+  --ink: #23241f;
+  --ink-dim: #6b6a62;
+  --line: #ddd9cd;
+  --accent: #2f6f5e;
+  --accent-soft: #e4efe9;
+  --warn: #b8562f;
+  --warn-soft: #f6e6dd;
+  --row-alt: #f1efe6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1b1c18;
+    --paper-raised: #232420;
+    --ink: #eae7dc;
+    --ink-dim: #9c998d;
+    --line: #3a3b34;
+    --accent: #6fbfa4;
+    --accent-soft: #26332d;
+    --warn: #e0885a;
+    --warn-soft: #3a2a20;
+    --row-alt: #202119;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #1b1c18;
+  --paper-raised: #232420;
+  --ink: #eae7dc;
+  --ink-dim: #9c998d;
+  --line: #3a3b34;
+  --accent: #6fbfa4;
+  --accent-soft: #26332d;
+  --warn: #e0885a;
+  --warn-soft: #3a2a20;
+  --row-alt: #202119;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  margin: 0;
+  padding: 2.5rem 1.5rem 5rem;
+  line-height: 1.4;
+}
+
+.wrap { max-width: 960px; margin: 0 auto; }
+
+h1 {
+  font-weight: 600;
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.15rem;
+  text-wrap: balance;
+}
+
+.subhead { color: var(--ink-dim); font-size: 0.92rem; margin: 0 0 1.75rem; }
+
+code {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  background: var(--row-alt);
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+/* ---------- setup panel ---------- */
+.setup {
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.2rem 1.3rem 1.4rem;
+  margin-bottom: 1.75rem;
+}
+.setup h2 { font-size: 1rem; margin: 0 0 0.3rem; }
+.setup p { font-size: 0.85rem; color: var(--ink-dim); margin: 0 0 0.7rem; }
+.setup .step { margin-bottom: 1.1rem; }
+.setup .step:last-child { margin-bottom: 0; }
+.step-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.query-block {
+  position: relative;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.query-block pre {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  overflow-x: auto;
+  white-space: pre;
+}
+.query-block .copy-btn { position: absolute; top: 0.5rem; right: 0.5rem; }
+
+textarea#paste-box {
+  width: 100%;
+  min-height: 110px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.7rem 0.8rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  resize: vertical;
+}
+textarea#paste-box::placeholder { color: var(--ink-dim); }
+
+.setup-actions { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.7rem; }
+#load-status { font-size: 0.78rem; color: var(--warn); }
+
+/* ---------- buttons ---------- */
+button {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--paper-raised); }
+button.primary:hover { opacity: 0.9; color: var(--paper-raised); }
+
+/* ---------- results ---------- */
+#results { display: none; }
+#results.active { display: block; }
+
+.top-bar { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.top-bar .spacer { flex: 1; }
+
+.summary-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  box-shadow: 0 4px 14px -8px rgba(0,0,0,0.25);
+}
+
+.stat { display: flex; flex-direction: column; gap: 0.1rem; }
+.stat .n {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.stat .l { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-dim); }
+.stat.approve .n { color: var(--accent); }
+.stat.exclude .n { color: var(--warn); }
+
+.controls { margin-left: auto; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+input[type="search"] {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  width: 180px;
+}
+input[type="search"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.tier-section { margin-bottom: 2.25rem; }
+.tier-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--line);
+}
+.tier-head h2 { font-size: 1.02rem; font-weight: 600; margin: 0; }
+.tier-head .count { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.78rem; color: var(--ink-dim); }
+.tier-note { font-size: 0.82rem; color: var(--ink-dim); margin: 0 0 0.7rem; }
+
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.83rem; min-width: 720px; }
+
+thead th {
+  text-align: left;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-dim);
+  font-weight: 600;
+  padding: 0.5rem 0.6rem;
+  background: var(--paper-raised);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+}
+
+tbody tr { background: var(--paper-raised); border-bottom: 1px solid var(--line); }
+tbody tr:nth-child(even) { background: var(--row-alt); }
+tbody tr:last-child { border-bottom: none; }
+tbody tr.excluded { opacity: 0.45; }
+tbody tr.hidden { display: none; }
+
+td { padding: 0.45rem 0.6rem; vertical-align: middle; }
+td.num, th.num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+td.company { font-weight: 500; }
+td.company a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--ink-dim); }
+td.company a:hover { color: var(--accent); border-color: var(--accent); }
+td.ats { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.75rem; color: var(--ink-dim); }
+
+.chk { width: 34px; text-align: center; }
+.chk input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+
+.output {
+  margin-top: 2rem;
+  background: var(--paper-raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem 1.1rem;
+}
+.output h2 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+.output p { font-size: 0.8rem; color: var(--ink-dim); margin: 0 0 0.6rem; }
+textarea#exclusion-out {
+  width: 100%;
+  min-height: 90px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem 0.7rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.78rem;
+  resize: vertical;
+}
+
+@media (max-width: 640px) {
+  .summary-bar { flex-direction: column; align-items: flex-start; }
+  .controls { margin-left: 0; width: 100%; }
+  input[type="search"] { flex: 1; width: auto; }
+}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<div class="wrap">
+  <h1>Watchlist review</h1>
+  <p class="subhead">Paste the result of a probe-review query below to build a checklist. Uncheck any company to exclude it; the exclusion list at the bottom updates live and is what goes back into <code>probe_decisions</code>.</p>
+
+  <div class="setup" id="setup-panel">
+    <div class="step">
+      <div class="step-label">1 — run this against Supabase</div>
+      <p>Edit the <code>seattle_rec in (...)</code> list to whichever tiers you're reviewing this round.</p>
+      <div class="query-block">
+        <button class="copy-btn" id="copy-query">Copy</button>
+        <pre id="query-text">select ats, slug, company, url, total_jobs, sw_jobs, software_pct,
+       local, seattle_rec, seattle_rec_note
+from ats_probe_latest
+where reviewed is not true
+  and seattle_rec in ('Yes-Go', 'Yes-Hold1', 'Yes-Hold2', 'Yes-SmallCoLowSW')
+order by
+  case seattle_rec
+    when 'Yes-Go' then 1
+    when 'Yes-Hold1' then 2
+    when 'Yes-Hold2' then 3
+    when 'Yes-SmallCoLowSW' then 4
+  end,
+  sw_jobs desc nulls last;</pre>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-label">2 — paste the JSON result here</div>
+      <textarea id="paste-box" placeholder='[{"ats":"greenhouse","slug":"example","company":"Example Inc","url":"https://...","total_jobs":42,"sw_jobs":9,"software_pct":0.21,"local":3,"seattle_rec":"Yes-Go","seattle_rec_note":"..."}, ...]'></textarea>
+      <div class="setup-actions">
+        <button class="primary" id="render-btn">Build checklist</button>
+        <span id="load-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="results">
+    <div class="top-bar">
+      <button id="change-batch">&larr; Load a different batch</button>
+      <div class="spacer"></div>
+    </div>
+
+    <div class="summary-bar">
+      <div class="stat approve"><span class="n" id="stat-approve">0</span><span class="l">Approve</span></div>
+      <div class="stat exclude"><span class="n" id="stat-exclude">0</span><span class="l">Exclude</span></div>
+      <div class="stat"><span class="n" id="stat-visible">0</span><span class="l">Shown</span></div>
+      <div class="controls">
+        <input type="search" id="filter" placeholder="Filter by name or slug…">
+        <button id="btn-none">Uncheck all shown</button>
+        <button id="btn-all">Check all shown</button>
+      </div>
+    </div>
+
+    <div id="tier-sections"></div>
+
+    <div class="output">
+      <h2>Exclusion list</h2>
+      <p>Copy this and send it back — everything not listed here gets <code>add_to_watchlist = true</code>.</p>
+      <textarea id="exclusion-out" readonly>(none excluded)</textarea>
+    </div>
+  </div>
+</div>
+
+<script>
+// Known tier metadata — order + description. Unrecognized seattle_rec
+// values still render, just sorted after these and without a note.
+const TIER_INFO = {
+  "Yes-Go":            { rank: 1, note: "Clean accept — normal-size board, strong software signal." },
+  "Yes-Hold1":         { rank: 2, note: "Accept but flagged — big board (>1000 jobs), review the % before trusting it." },
+  "Yes-Hold2":         { rank: 3, note: "Accept but flagged — paginated ATS where the job count may be capped/understated." },
+  "Yes-SmallCoLowSW":  { rank: 4, note: "Small board with local presence but low software signal; keyword list under-reads tiny boards." },
+  "Maybe-Good":        { rank: 5, note: "Lower confidence — worth a look." },
+  "Maybe-Low":         { rank: 6, note: "Lower confidence, weaker signal." },
+  "Maybe-later2":      { rank: 7, note: "No current Seattle/Remote-WA presence but a decent software % — watch, might open a Seattle role later." },
+};
+
+// Filled in by Claude before publishing — the query result gets dropped in
+// here so the page renders immediately, no manual paste needed. Leave as
+// [] in the checked-in copy; it's what makes this a blank template.
+const PRELOADED_ROWS = /*__PRELOADED_ROWS__*/[]/*__END_PRELOADED_ROWS__*/;
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function pct(v) { return (v === null || v === undefined) ? "—" : (v * 100).toFixed(1) + "%"; }
+
+let allRows = [];
+
+function buildTierSections(rows) {
+  const container = document.getElementById("tier-sections");
+  container.innerHTML = "";
+  allRows = [];
+
+  const groups = new Map();
+  for (const r of rows) {
+    const tier = r.seattle_rec || "Unlabeled";
+    if (!groups.has(tier)) groups.set(tier, []);
+    groups.get(tier).push(r);
+  }
+
+  const tiers = [...groups.keys()].sort((a, b) => {
+    const ra = TIER_INFO[a]?.rank ?? 999;
+    const rb = TIER_INFO[b]?.rank ?? 999;
+    return ra !== rb ? ra - rb : a.localeCompare(b);
+  });
+
+  for (const tier of tiers) {
+    const rows = groups.get(tier).slice().sort((a, b) => (b.sw_jobs ?? -1) - (a.sw_jobs ?? -1));
+
+    const section = document.createElement("div");
+    section.className = "tier-section";
+    const note = TIER_INFO[tier]?.note;
+    section.innerHTML = `
+      <div class="tier-head"><h2>${esc(tier)}</h2><span class="count">${rows.length} compan${rows.length === 1 ? "y" : "ies"}</span></div>
+      ${note ? `<p class="tier-note">${esc(note)}</p>` : ""}
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th class="chk"></th><th>Company</th><th class="ats">ATS</th>
+            <th class="num">Jobs</th><th class="num">SW jobs</th><th class="num">SW %</th><th class="num">Local</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>`;
+    const tbody = section.querySelector("tbody");
+
+    for (const r of rows) {
+      const tr = document.createElement("tr");
+      tr.dataset.ats = r.ats;
+      tr.dataset.slug = r.slug;
+      tr.dataset.company = r.company;
+      tr.dataset.search = `${r.company} ${r.slug} ${r.ats}`.toLowerCase();
+      const companyCell = r.url
+        ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.company)}</a>`
+        : esc(r.company);
+      tr.innerHTML = `
+        <td class="chk"><input type="checkbox" checked></td>
+        <td class="company">${companyCell}</td>
+        <td class="ats">${esc(r.ats)}</td>
+        <td class="num">${r.total_jobs ?? "—"}</td>
+        <td class="num">${r.sw_jobs ?? "—"}</td>
+        <td class="num">${pct(r.software_pct)}</td>
+        <td class="num">${r.local ?? "—"}</td>`;
+      tbody.appendChild(tr);
+      tr.querySelector('input[type="checkbox"]').addEventListener("change", refreshCounts);
+      allRows.push(tr);
+    }
+    container.appendChild(section);
+  }
+
+  refreshCounts();
+}
+
+function refreshCounts() {
+  let approve = 0, exclude = 0, visible = 0;
+  const excludedList = [];
+  allRows.forEach(tr => {
+    const cb = tr.querySelector('input[type="checkbox"]');
+    const isVisible = !tr.classList.contains("hidden");
+    if (isVisible) visible++;
+    if (cb.checked) {
+      approve++;
+      tr.classList.remove("excluded");
+    } else {
+      exclude++;
+      tr.classList.add("excluded");
+      excludedList.push(`${tr.dataset.ats}:${tr.dataset.slug}  (${tr.dataset.company})`);
+    }
+  });
+  document.getElementById("stat-approve").textContent = approve;
+  document.getElementById("stat-exclude").textContent = exclude;
+  document.getElementById("stat-visible").textContent = visible;
+  document.getElementById("exclusion-out").value = excludedList.length ? excludedList.join("\n") : "(none excluded)";
+}
+
+document.getElementById("filter").addEventListener("input", (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  allRows.forEach(tr => tr.classList.toggle("hidden", q.length > 0 && !tr.dataset.search.includes(q)));
+  refreshCounts();
+});
+document.getElementById("btn-none").addEventListener("click", () => {
+  allRows.forEach(tr => { if (!tr.classList.contains("hidden")) tr.querySelector('input[type="checkbox"]').checked = false; });
+  refreshCounts();
+});
+document.getElementById("btn-all").addEventListener("click", () => {
+  allRows.forEach(tr => { if (!tr.classList.contains("hidden")) tr.querySelector('input[type="checkbox"]').checked = true; });
+  refreshCounts();
+});
+
+document.getElementById("copy-query").addEventListener("click", () => {
+  navigator.clipboard.writeText(document.getElementById("query-text").textContent).then(() => {
+    const btn = document.getElementById("copy-query");
+    const orig = btn.textContent;
+    btn.textContent = "Copied";
+    setTimeout(() => { btn.textContent = orig; }, 1200);
+  });
+});
+
+document.getElementById("render-btn").addEventListener("click", () => {
+  const raw = document.getElementById("paste-box").value.trim();
+  const status = document.getElementById("load-status");
+  if (!raw) { status.textContent = "Paste a JSON array first."; return; }
+  let data;
+  try {
+    data = JSON.parse(raw);
+    if (!Array.isArray(data)) throw new Error("not an array");
+  } catch (e) {
+    status.textContent = "Couldn't parse that as a JSON array — check the paste.";
+    return;
+  }
+  if (data.length === 0) { status.textContent = "That array is empty."; return; }
+  status.textContent = "";
+  buildTierSections(data);
+  document.getElementById("setup-panel").style.display = "none";
+  document.getElementById("results").classList.add("active");
+});
+
+document.getElementById("change-batch").addEventListener("click", () => {
+  document.getElementById("results").classList.remove("active");
+  document.getElementById("setup-panel").style.display = "block";
+});
+
+if (PRELOADED_ROWS.length > 0) {
+  buildTierSections(PRELOADED_ROWS);
+  document.getElementById("setup-panel").style.display = "none";
+  document.getElementById("results").classList.add("active");
+}
+</script>
