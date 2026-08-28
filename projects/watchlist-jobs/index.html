@@ -61,7 +61,7 @@ const LIST_COLUMNS = [
   "department","team","employment_type","is_remote","salary_min","salary_max","salary_currency","salary_period",
   "posted_at","first_seen","url","apply_url","maybe_wa","maybe_remote_wa",
   "area","role_keyword","level","description_last_change","description_change_count","post_status",
-  "is_new_company","days_old","days_old_estimated"
+  "is_new_company","days_old","days_old_estimated","posted_date"
 ].join(",");
 
 // Sentinel value for the "(unclassified)" option in the classifier dropdowns
@@ -158,46 +158,23 @@ function daysAgoLabel(d) {
   return diff + " days ago";
 }
 
-// posted_at is a timestamptz -- bucket it into the Seattle calendar day so it's
-// comparable to first_seen (already a Seattle day) and to daysAgoLabel/fmtDateLong.
-function seattleDay(ts) {
-  const dt = new Date(ts);
-  if (isNaN(dt)) return null;
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(dt);
-}
-
-function subtractOneDay(d) {
-  const [y, m, day] = String(d).slice(0, 10).split("-").map(Number);
-  if (!y || !m || !day) return d;
-  return new Date(Date.UTC(y, m - 1, day - 1)).toISOString().slice(0, 10);
-}
-
-// Per row: posted_at if we have it, else first_seen - 1 day (first_seen is the
-// day we noticed the job, so the actual post date is estimated as the day before).
-function effectivePostedDate(r) {
-  if (r.posted_at) return seattleDay(r.posted_at);
-  if (r.first_seen) return subtractOneDay(r.first_seen);
-  return null;
-}
-
-// Effective posted date of the most recently *tracked* row (max first_seen), for
-// the page-level "Posted <when>" banner. Deliberately not a max of effective
-// posted date across every open role: a stale role's posted_at can get bumped
-// by the source ATS without the job being new to us, which would otherwise make
-// old backlog noise look like today's freshest posting.
+// posted_date of the newest "New" listing on the page, for the page-level
+// "Posted <when>" banner. It's job_content.posted_date (a Seattle calendar day
+// with its own fallback chain -- posted_at's Seattle day, else start_date, else
+// first_seen - 1) surfaced through the jobs_location_flags view. Restricted to
+// post_status === "New" rows -- exactly what this page lists and counts -- so a
+// same-day repost or a stale role whose source posted_at got bumped can't pull
+// the banner off the genuine new-listings date. Falls back to the newest
+// posted_date across all rows only when no "New" row is loaded yet (e.g. the
+// quick first-paint slice before the full set lands).
 function mostRecentPostedDate(rows) {
-  let bestFirstSeen = null, bestEffective = null;
+  let newest = null, newestAny = null;
   for (const r of rows) {
-    if (!r.first_seen) continue;
-    if (!bestFirstSeen || r.first_seen > bestFirstSeen) {
-      bestFirstSeen = r.first_seen;
-      bestEffective = effectivePostedDate(r);
-    } else if (r.first_seen === bestFirstSeen) {
-      const eff = effectivePostedDate(r);
-      if (eff && (!bestEffective || eff > bestEffective)) bestEffective = eff;
-    }
+    if (!r.posted_date) continue;
+    if (!newestAny || r.posted_date > newestAny) newestAny = r.posted_date;
+    if (r.post_status === "New" && (!newest || r.posted_date > newest)) newest = r.posted_date;
   }
-  return bestEffective;
+  return newest || newestAny;
 }
 
 // ---- Data load ----
@@ -249,9 +226,11 @@ async function init() {
 // ---- Render ----
 function render() {
   const postedDate = mostRecentPostedDate(state.rows);
+  const postedLabel = postedDate
+    ? "Posted " + daysAgoLabel(postedDate) + " (" + fmtDateLong(postedDate) + ")"
+    : "No new listings";
   document.getElementById("sub").textContent =
-    "Posted " + daysAgoLabel(postedDate) + " (" + fmtDateLong(postedDate) + ")" +
-    (state.fullyLoaded ? "" : " (loading full list for filtering/paging…)");
+    postedLabel + (state.fullyLoaded ? "" : " (loading full list for filtering/paging…)");
 
   // company dropdown
   const sel = document.getElementById("companySel");
