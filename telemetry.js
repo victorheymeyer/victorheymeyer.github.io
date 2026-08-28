@@ -61,14 +61,48 @@
     };
   }
 
-  function start(client) {
-    function send(row) {
-      if (!client) return;
-      try {
-        client.from("event_logs").insert(row).then(function () {}, function () {});
-      } catch (e) {
-        // telemetry must never break the page
+  var readyClient = null;
+  var trackQueue = [];
+
+  function sendRow(row) {
+    if (!readyClient) {
+      if (trackQueue) trackQueue.push(row);
+      return;
+    }
+    try {
+      readyClient.from("event_logs").insert(row).then(function () {}, function () {});
+    } catch (e) {
+      // telemetry must never break the page
+    }
+  }
+
+  // Public hook for first-party UI actions that are neither a pageview nor an
+  // anchor click (e.g. My Criteria's Save button). Safe to call before the
+  // Supabase client has finished loading: rows queue and flush on start().
+  // `extra` may set any event_logs column (e.g. { target_url: "..." }).
+  function thTrack(eventType, extra) {
+    var row = baseFields();
+    row.event_type = eventType;
+    row.page_url = window.location.href;
+    if (extra) {
+      for (var k in extra) {
+        if (Object.prototype.hasOwnProperty.call(extra, k)) row[k] = extra[k];
       }
+    }
+    sendRow(row);
+  }
+
+  window.thTrack = thTrack;
+
+  function start(client) {
+    readyClient = client || null;
+
+    // Flush anything thTrack queued before the client was ready. If the client
+    // failed to load, drop them the same way trackPageview would be dropped.
+    var queued = trackQueue;
+    trackQueue = null;
+    if (readyClient && queued) {
+      for (var i = 0; i < queued.length; i++) sendRow(queued[i]);
     }
 
     function trackPageview() {
@@ -76,7 +110,7 @@
       row.event_type = "pageview";
       row.page_url = window.location.href;
       row.referrer = document.referrer || null;
-      send(row);
+      sendRow(row);
     }
 
     function trackClick(anchor) {
@@ -88,7 +122,7 @@
       var atsId = anchor.getAttribute("data-ats-id");
       if (company) row.watchlist_company = company;
       if (atsId) row.ats_id = atsId;
-      send(row);
+      sendRow(row);
     }
 
     document.addEventListener("click", function (e) {
