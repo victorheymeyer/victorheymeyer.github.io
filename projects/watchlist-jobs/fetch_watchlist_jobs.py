@@ -994,8 +994,14 @@ def _query_removed_candidates():
         return []
 
 
-def _query_repeat_offenders():
-    """Non-BLOCKED failures recurring on 3+ distinct days in the last 7."""
+def _query_repeat_offenders(snapshot_date):
+    """Non-BLOCKED failures recurring on 3+ distinct days in the last 7,
+    still failing as of the current run.
+
+    The snapshot_date gate means a company that racked up 3+ failure days
+    last week but recovered (or was deactivated, so it's no longer pulled)
+    drops off the alert immediately rather than lingering for a week.
+    """
     try:
         cutoff = (datetime.now(SEATTLE_TZ).date() - timedelta(days=6)).isoformat()
         resp = sb.table("pull_failures") \
@@ -1008,7 +1014,8 @@ def _query_repeat_offenders():
             key = (r["watchlist_company"], r["ats"], r["outcome"])
             by_co.setdefault(key, set()).add(r["snapshot_date"])
         return sorted([f"{co} ({ats}, {out}, {len(days)}d)"
-                       for (co, ats, out), days in by_co.items() if len(days) >= 3])
+                       for (co, ats, out), days in by_co.items()
+                       if len(days) >= 3 and snapshot_date in days])
     except Exception as e:
         print(f"WARNING: repeat-offender query failed: {type(e).__name__}: {e}")
         return []
@@ -1018,7 +1025,7 @@ def send_alert_email(failure_rows, snapshot_date):
     """Send ONE alert email if anything needs attention; else nothing."""
     blocked = [r for r in failure_rows if r.get("outcome") == "BLOCKED"]
     removed_candidates = _query_removed_candidates()
-    repeat_offenders = _query_repeat_offenders()
+    repeat_offenders = _query_repeat_offenders(snapshot_date)
 
     # TEMP TEST SCAFFOLDING: fire on any classified failure today. REMOVE after test.
     todays_failures = [r for r in failure_rows if r.get("error_code")]
