@@ -138,7 +138,59 @@ def description_fingerprint(value):
 # with "Seattle, WA" only in allLocations. Workday already resolves this
 # itself (_format_locations) and SmartRecruiters doesn't carry a secondary
 # list, so both are left alone here.
-def _location_alternates(raw):
+#
+# Cross-border house-tag guard (Greenhouse `offices` only): `offices` is an
+# org-structure field, not always a per-posting location. Some boards stamp
+# ONE static value ("Remote US") on every posting regardless of the real
+# location, which lives in `location.name`. Folding that static tag in
+# rewrites a Canada/UK/EU-only role as US-remote -- e.g. every Affirm
+# "Remote Canada" posting was surfacing as a remote-WA candidate because
+# `offices` was ["Remote US"]. So: when the offices list is a single generic
+# US-remote token AND the primary location names a non-US country, skip it.
+# Scoped deliberately narrow -- a lone US-remote tag on a US-city primary is
+# noisier to detect and lower-stakes, and multi-entry offices lists are in
+# the data always genuine multi-site, so both are left as-is.
+_US_REMOTE_OFFICE_RE = re.compile(
+    r"^\s*(remote[\s,/-]*)?(u\.?s\.?a?\.?|usa|united states(\s+of\s+america)?)\s*$",
+    re.I,
+)
+_NON_US_COUNTRY_RE = re.compile(
+    r"\b("
+    r"canada|canadian|"
+    r"united kingdom|u\.?k\.?|england|scotland|wales|northern ireland|"
+    r"ireland|"
+    r"europe|european|emea|eu|"
+    r"germany|france|spain|portugal|netherlands|poland|romania|italy|sweden|"
+    r"switzerland|belgium|austria|denmark|norway|finland|"
+    r"india|australia|new zealand|"
+    r"brazil|mexico|argentina|colombia|"
+    r"singapore|japan|philippines|"
+    r"toronto|vancouver|montreal|dublin|amsterdam|berlin|munich|"
+    r"madrid|barcelona|warsaw|bangalore|bengaluru|hyderabad|"
+    r"sydney|melbourne"
+    r")\b",
+    re.I,
+)
+_PRIMARY_US_HINT_RE = re.compile(
+    r"\b(u\.?s\.?a?\.?|usa|united states|america|stateside)\b", re.I
+)
+
+
+def _is_us_remote_office(office):
+    return isinstance(office, str) and bool(_US_REMOTE_OFFICE_RE.match(office))
+
+
+def _primary_is_non_us(primary):
+    """True when the primary location clearly names a non-US country and does
+    NOT also name the US (a "US-Remote, Remote in Canada" style multi-region
+    primary already carries a real US segment, so the office tag is harmless
+    there and the guard should not fire)."""
+    if not isinstance(primary, str) or not primary.strip():
+        return False
+    return bool(_NON_US_COUNTRY_RE.search(primary)) and not _PRIMARY_US_HINT_RE.search(primary)
+
+
+def _location_alternates(raw, primary=None):
     if not isinstance(raw, dict):
         return []
     alternates = []
@@ -153,9 +205,16 @@ def _location_alternates(raw):
         if isinstance(loc, str) and loc.strip():
             alternates.append(loc.strip())
 
-    for office in raw.get("offices") or []:
-        if isinstance(office, str) and office.strip():
-            alternates.append(office.strip())
+    offices = raw.get("offices") or []
+    skip_offices = (
+        len(offices) == 1
+        and _is_us_remote_office(offices[0])
+        and _primary_is_non_us(primary)
+    )
+    if not skip_offices:
+        for office in offices:
+            if isinstance(office, str) and office.strip():
+                alternates.append(office.strip())
 
     for loc in raw.get("locations") or []:
         if isinstance(loc, dict):
@@ -173,7 +232,7 @@ def augment_location(location, raw):
     """Append any ATS-captured alternate locations not already present in
     `location`, de-duplicating case-insensitively. Joined with "; " so the
     classifier's existing ";"/"|" segment-splitting logic keeps working."""
-    alternates = _location_alternates(raw)
+    alternates = _location_alternates(raw, location)
     if not alternates:
         return location
     seen = set()
