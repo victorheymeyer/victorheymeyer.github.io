@@ -117,7 +117,7 @@
 
     const dept = r.department ? esc(r.department) : "N/A";
     const team = r.team ? esc(r.team) : "N/A";
-    const posted = r.posted_at ? fmtDate(r.posted_at) : "N/A";
+    const posted = r.posted_date ? fmtDate(r.posted_date) : "N/A";
     const lastSeen = fmtDate(r.snapshot_date);
     const firstSeen = r.first_seen ? fmtDate(r.first_seen) : "N/A";
     const ats = r.ats_type ? esc(r.ats_type) : "N/A";
@@ -145,8 +145,8 @@
         ' | Role: ' + roleKw +
         ' | Level: ' + lvl + '</div>' +
       '<div class="metaline"><span class="lbl">Dates:</span> Posted: ' + posted +
-        ' | Last Seen: ' + lastSeen +
         ' | First Seen: ' + firstSeen +
+        ' | Last Seen: ' + lastSeen +
         ' | Last Desc Change: ' + lastDescChange +
         ' | Char # delta: ' + descChangeCount +
         ' (Status: ' + postStatus + daysOldSuffix + ')</div>' +
